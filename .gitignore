@@ -1,0 +1,5 @@
+figs/
+realizations/
+*.pyc
+*.pdf
+__pycache__/
