@@ -1,5 +1,8 @@
 figs/
 realizations/
+leftovers/
+runs/
+save/
 *.pyc
 *.pdf
 __pycache__/

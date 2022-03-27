@@ -4,9 +4,8 @@ from numpy import sqrt, pi
 import scipy.special as spc
 import healpy as hp
 import math
-import quaternionic
-import spherical
 import time
+import pyshtools as pysh
 
 # Numba actually makes this slower.
 # parallel = True does not work since we are appending to the list as we go
@@ -57,12 +56,13 @@ def cart2spherical(xyz):
     
     return spherical_coords
 
-@njit(parallel=False)
-def get_C_numba(L, l_max, n_max, lm_index, integrand, sph_harm_no_phase, list_n_xy_squared, list_n_xyz_squared, only_diag=False):
+#@njit(parallel=False)
+def get_c_lmlpmp(L, l_max, n_max_list, lm_index, integrand, sph_harm_no_phase, list_n_xy_squared, list_n_xyz_squared, only_diag=False):
     num_l_m = int((l_max + 1)*(l_max + 2)/2)
     C_TT_lmlpmp = np.zeros((num_l_m, num_l_m), dtype=np.complex128)
+    n_max = max(n_max_list)
 
-    for n_x in range(-n_max, n_max+1):
+    for n_x in prange(-n_max, n_max+1):
         for n_y in range(-n_max, n_max+1):
             n_xy_squared = n_x**2 + n_y**2
             i = np.where(list_n_xy_squared == n_xy_squared)[0][0]
@@ -77,21 +77,37 @@ def get_C_numba(L, l_max, n_max, lm_index, integrand, sph_harm_no_phase, list_n_
                 # k is discrete, so j gives the array number
                 j = np.where(list_n_xyz_squared == n_squared)[0][0]
 
+                #theta = cart2theta(n_xy_squared, n_z)
+
+                #all_sph_harm_no_phase = np.zeros((l_max+1, l_max+1))
+                #with objmode(all_sph_harm_no_phase='float64[:, :]'):
+                #all_sph_harm_no_phase = np.real(pysh.expand.spharm(l_max, theta, 0, kind = 'complex', degrees = False, normalization = 'ortho', csphase=-1))[0, :, :]
+                #all_sph_harm_no_phase[0, 0]
+                #print(all_sph_harm_no_phase.shape)
                 for l in range(l_max+1):
+                    if sqrt(n_squared) > n_max_list[l]:
+                        continue
+
                     for m in range(l + 1):
                         lm_index_cur = lm_index[l, m]
 
-                        sph_harm_no_phase_lm = sph_harm_no_phase[lm_index_cur, n_z+n_max, i]
+                        sph_harm_no_phase_lm = sph_harm_no_phase[lm_index_cur, np.abs(n_z), i]
+
                         if only_diag:
                             C_TT_lmlpmp[lm_index_cur, lm_index_cur] += integrand[j, l, l] * sph_harm_no_phase_lm **2
+
                         else:
+                            if n_z < 0: sph_harm_no_phase_lm *= (-1) ** (l+m)
+
                             for l_p in range(l_max+1):
                                 integrand_il = integrand[j, l, l_p] * np.power(1j, l_p-l)
                                 
                                 for m_p in range(l_p + 1):
                                     lm_p_index_cur = lm_index[l_p, m_p]
 
-                                    sph_harm_no_phase_lm_p = sph_harm_no_phase[lm_p_index_cur, n_z+n_max, i]
+                                    sph_harm_no_phase_lm_p = sph_harm_no_phase[lm_p_index_cur, np.abs(n_z), i]
+                                    
+                                    if n_z < 0: sph_harm_no_phase_lm_p *= (-1) ** (l_p+m_p)
 
                                     C_TT_lmlpmp[lm_index_cur, lm_p_index_cur] += integrand_il * sph_harm_no_phase_lm * sph_harm_no_phase_lm_p \
                                     * np.exp(1j * (m-m_p) * phi)
@@ -99,15 +115,19 @@ def get_C_numba(L, l_max, n_max, lm_index, integrand, sph_harm_no_phase, list_n_
 
     return C_TT_lmlpmp
 
-@njit(parallel=True)
-def get_alm_numba(L, l_max, n_max, lm_index, sph_harm_no_phase, list_n_xy_squared, list_n_xyz_squared, delta_k_n, transfer_delta_kl):
+#@njit(parallel=True)
+def get_alm_numba(L, l_max, n_max_list, lm_index, sph_harm_no_phase, list_n_xy_squared, list_n_xyz_squared, delta_k_n, transfer_delta_kl):
     num_l_m = int((l_max + 1)*(l_max + 2)/2)
     a_lm = np.zeros(num_l_m, dtype=np.complex128)
+    n_max = max(n_max_list)
     for n_x in prange(-n_max, n_max+1):
         for n_y in range(-n_max, n_max+1):
             n_xy_squared = n_x**2 + n_y**2
             i = np.where(list_n_xy_squared == n_xy_squared)[0][0]
             phi = cart2phi(n_x, n_y)
+
+            m_list = np.arange(0, l_max+1)
+            phase_list = np.exp(-1j * phi * m_list)
             
             for n_z in range(-n_max, n_max+1):
                 n_squared = n_xy_squared + n_z**2
@@ -119,12 +139,20 @@ def get_alm_numba(L, l_max, n_max, lm_index, sph_harm_no_phase, list_n_xy_square
                 random_delta_k_n = np.random.normal(loc=0, scale = delta_k_n[j])
                 uniform = np.random.uniform(0.0, np.pi*2)
                 random_delta_k_n *= np.exp(1j * uniform)
+                #random_delta_k_n = delta_k_n[j]
 
                 for l in range(l_max+1):
+                    if sqrt(n_squared) > n_max_list[l]:
+                        continue
                     delta_k_n_mul_transfer = random_delta_k_n * transfer_delta_kl[j, l]
                     for m in range(l+1):
                         lm_index_cur = lm_index[l, m]
-                        a_lm[lm_index_cur] += delta_k_n_mul_transfer * np.exp(-1j * phi * m) * sph_harm_no_phase[lm_index_cur, n_z+n_max, i]
+                        
+                        sph_harm = phase_list[m] * sph_harm_no_phase[lm_index_cur, np.abs(n_z), i]
+                        if n_z < 0: sph_harm *= (-1) ** (l+m)
+
+                        a_lm[lm_index_cur] += delta_k_n_mul_transfer * sph_harm
+
     for l in range(l_max+1):
         for m in range(l+1):
             lm_index_cur = lm_index[l, m]
@@ -180,42 +208,36 @@ def do_integrand_pre_processing(list_n_xyz_squared, scalar_pk_k3, transfer_delta
 
 
 ###TEST
-def test(L, l_max, n_max, lm_index, integrand, legendre, list_n_xy_squared, list_n_xyz_squared):
+def numba_bug(L, l_max, n_max, lm_index, sph_harm_no_phase, list_n_xy_squared, list_n_xyz_squared, delta_k_n, transfer_delta_kl):
     num_l_m = int((l_max + 1)*(l_max + 2)/2)
-    C_TT = np.zeros((num_l_m, num_l_m), dtype=np.complex128)
+    a_lm = np.zeros(num_l_m, dtype=np.complex128)
+    for n_x in range(-n_max, n_max+1):
+        for n_y in range(-n_max, n_max+1):
+            n_xy_squared = n_x**2 + n_y**2
+            i = np.where(list_n_xy_squared == n_xy_squared)[0][0]
+            phi = cart2phi(n_x, n_y)
 
-    n_x = 5
-    n_y = 3
-    n_xy_squared = n_x**2 + n_y**2
-    i = 5
-    phi = cart2phi(n_x, n_y)
+            m_list = np.arange(0, l_max+1)
+            phase_list = np.exp(-1j * phi * m_list)
+            
+            for n_z in range(-n_max, n_max+1):
+                n_squared = n_xy_squared + n_z**2
+                if n_squared==0 or n_squared > n_max**2:
+                    # We dont do k=0 or k > k_max
+                    continue
+                j = np.where(list_n_xyz_squared == n_squared)[0][0]
+
+                random_delta_k_n = 1
+
+                for l in range(l_max+1):
+                    delta_k_n_mul_transfer = random_delta_k_n * transfer_delta_kl[j, l]
+                    for m in range(l+1):
+                        lm_index_cur = lm_index[l, m]
+                        #sph_harm = np.exp(-1j * phi * m) * sph_harm_no_phase[lm_index_cur, np.abs(n_z), i]
+                        sph_harm = phase_list[m] * sph_harm_no_phase[lm_index_cur, np.abs(n_z), i]
+
+                        if n_z < 0: sph_harm *= (-1) ** (l+m)
+
+                        a_lm[lm_index_cur] += delta_k_n_mul_transfer * sph_harm
     
-    for n_z in prange(2):
-        n_squared = n_xy_squared + n_z**2
-        if n_squared==0 or n_squared > n_max**2:
-            # We dont do k=0 or k > k_max
-            continue
-
-        # k is discrete, so j gives the array number
-        j = 5
-
-        for l in range(l_max+1):
-            for m in range(l + 1):
-                lm_index_cur = lm_index[l, m]
-
-                legendre_lm = legendre[lm_index_cur, n_z+n_max, i]
-                for l_p in range(l_max+1):
-                    integrand_il = integrand[j, l, l_p]
-                    
-                    for m_p in range(l_p + 1):
-                        lm_p_index_cur = lm_index[l_p, m_p]
-
-                        legendre_lm_p = legendre[lm_p_index_cur, n_z+n_max, i]
-
-                        C_TT[lm_index_cur, lm_p_index_cur] += integrand_il * legendre_lm * legendre_lm_p
-                        
-    _, dim = C_TT.shape
-    #print(C_TT)
-    v1 = np.ones(dim, dtype=np.complex128)
-    print(np.dot(v1, np.dot(C_TT,v1)))
-    return C_TT
+    return a_lm
