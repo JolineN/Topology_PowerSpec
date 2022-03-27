@@ -40,7 +40,7 @@ class E1(Topology):
     # So instead of for looping over all nx, ny, nz, we instead loop over possible n^2 values
     transfer_interpolate_k_l = scipy.interpolate.interp2d(self.k_list, self.ell_list, self.transfer_data[0, :, :], kind='quintic')
     transfer_delta_kl = np.zeros((num_xyz_squared, self.l_max+1))
-
+    print('Transfer is', round(getsizeof(transfer_delta_kl) / 1024 / 1024,2), 'MB')
     for n_squared_index in range(1, num_xyz_squared):
         n_squared = list_n_xyz_squared[n_squared_index]
 
