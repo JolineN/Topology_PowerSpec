@@ -3,7 +3,7 @@
 To run the code, do 
 ```python run_topology.py```.
 
-Then, the parameters in ```parameter_files/.default.py``` will be used to create 1000 realizations of the topology defined in that parameter file.
+Then, the parameters in ```parameter_files/default.py``` will be used to create 1000 realizations of the topology defined in that parameter file.
 
 The code should work well for ```c_l_accuracy``` of 0.9, 0.95, and 0.99. These numbers decide how accurate the realizations will be. Lower number for ```c_l_accuracy``` will also necessarily give less power (i.e. the amplitude of the a_lm will be smaller).
 
