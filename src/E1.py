@@ -14,11 +14,6 @@ class E1(Topology):
     self.l_max = param['l_max']
     self.param = param
 
-
-    self.n_max_list = self.get_initial_nmax_list()
-    k_max_list = 2*pi * self.n_max_list / np.power(self.V, 1/3)
-    self.k_max_list = k_max_list
-
     Topology.__init__(self, param, debug)
 
   def get_list_of_k_phi_theta(self):

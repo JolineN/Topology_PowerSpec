@@ -25,10 +25,12 @@ class Topology:
         self.c_l_accuracy = param['c_l_accuracy']
         self.L = param['Lx'] * 28 * 1e3 # Defined in MPc
 
-        self.fig_name = 'l_max_{}_n_max_{}'.format(self.l_max, max(self.n_max_list))
+        self.get_initial_kmax_list()
+
+        self.fig_name = 'l_max_{}'.format(self.l_max)
         self.debug = debug
 
-        print('Running - n_max={}, l_max={}, L={}'.format(max(self.n_max_list), self.l_max, int(self.L)))
+        print('Running - l_max={}, L={}'.format(self.l_max, int(self.L)))
         self.root = 'runs/{}_L_{}_l_max_{}_accuracy_{}_percent/'.format(
             self.topology,
             int(self.L),
@@ -171,15 +173,23 @@ class Topology:
         print('**************')
         print('')
 
-    def get_initial_nmax_list(self):
-        # Returns n_max as a function of ell.
-        # This is just an initial guess. But make sure that self.param['initial_n_max_for_l_max']
-        # does not make the CAMB c_l ratio for l_max to large
-        n_max = self.param['initial_n_max_for_l_max']
+    def get_initial_kmax_list(self):
+        # Returns k_max as a function of ell.
+        # This is just an initial guess, but make sure k_max is not too large
+        # otherwise the code will be slow
+        if np.isclose(self.c_l_accuracy, 0.99):
+            k_max = 0.061
+        elif np.isclose(self.c_l_accuracy, 0.95):
+            k_max = 0.043
+        elif np.isclose(self.c_l_accuracy, 0.90):
+            k_max = 0.0318
+        else:
+            # Random guess. This should be improved in the future
+            k_max = 0.035 * self.c_l_accuracy
+
         l_max = self.l_max
 
-        n_max_list_initial = np.ceil((np.arange(0, l_max+1)+4) * (n_max-1) / l_max)
-        return np.array(list(map(int, n_max_list_initial)))
+        self.k_max_list = np.arange(0, l_max+1) * k_max / l_max
 
     def is_kmax_high_enough(self, plot_lmax_integrand=True):
         # Calculate c_l up to k_max and compare it to CAMB to see
@@ -214,7 +224,7 @@ class Topology:
         
         #print('k_max list as a function of ell:', self.k_max_list)
         if min(ratio_lmax) < self.c_l_accuracy:
-            # n_max is not high enough. We need to go to increase n_max
+            # k_max is not high enough. We need to go to increase k_max
             print('k_max of was not high enough for one or more ell')
             return False
         else:
@@ -372,7 +382,7 @@ class Topology:
         plt.ylabel(r'$\ell$')
         plt.clim(1e-3, 1e3)
         plt.colorbar()
-        plt.savefig(self.root+'figs/c_tt_off_diag_L_{}_lmax_{}_nmax_{}.pdf'.format(int(self.L/1000), self.l_max, self.n_max))
+        plt.savefig(self.root+'figs/c_tt_off_diag_L_{}_lmax_{}.pdf'.format(int(self.L/1000), self.l_max))
 
     def make_realization_c_lmlpmp_cholesky(self):
         # THIS CODE SEEMS TO BE BUGGY!
@@ -395,7 +405,7 @@ class Topology:
         map = hp.alm2map(corr_alm, 512, pol=False)
         plt.figure()
         hp.mollview(map, remove_dip=True)
-        plt.savefig(self.root+'realizations/map_L_{}_lmax_{}_nmax_{}.pdf'.format(int(self.L/1000), self.l_max, self.n_max))
+        plt.savefig(self.root+'realizations/map_L_{}_lmax_{}.pdf'.format(int(self.L/1000), self.l_max))
 
     def plot_c_l_and_realizations(self, c_l_a=None):
         l_min=3
