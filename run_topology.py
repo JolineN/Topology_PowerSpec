@@ -12,9 +12,9 @@ import parameter_files.default as parameter_file
 
 param = parameter_file.parameter
 
-a = E1(debug=False, param=param)
+a = E1(debug=True, param=param)
 
-c_l_a = a.make_alm_realizations(plot_alm=True, save_alm = True, it=1000)
+c_l_a = a.make_alm_realizations(plot_alm=True, save_alm = False, it=4)
 
 a.calculate_c_lmlpmp(only_diag=True)
 

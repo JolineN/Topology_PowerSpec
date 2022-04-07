@@ -182,7 +182,7 @@ class Topology:
         elif np.isclose(self.c_l_accuracy, 0.95):
             k_max = 0.043
         elif np.isclose(self.c_l_accuracy, 0.90):
-            k_max = 0.0318
+            k_max = 0.032
         else:
             # Random guess. This should be improved in the future
             k_max = 0.035 * self.c_l_accuracy
@@ -437,7 +437,7 @@ class Topology:
         num_k_amp_unique = self.k_amp_unique.size
         transfer_delta_kl = np.zeros((num_k_amp_unique, self.l_max+1))
 
-        ncpus = multiprocessing.cpu_count() - 10
+        ncpus = multiprocessing.cpu_count()
         os.environ['OMP_NUM_THREADS'] = '1'
         pool = multiprocessing.Pool(processes=ncpus)
         print('Minimum k_amp:', min(self.k_amp_unique))
@@ -456,7 +456,7 @@ class Topology:
         # We only find Y_lm for unique theta elements. We don't want to recalculate Y_lm unnecessarily
         unique_theta_length = np.count_nonzero(self.theta_index_repeat==-1)
         assert(self.theta_unique.size == unique_theta_length)
-        ncpus = multiprocessing.cpu_count() - 10
+        ncpus = multiprocessing.cpu_count()
         os.environ['OMP_NUM_THREADS'] = '1'
         pool = multiprocessing.Pool(processes=ncpus)
         args = zip(np.arange(unique_theta_length), repeat(self.l_max), repeat(self.theta_unique), repeat(self.lm_index), repeat(num_l_m))
@@ -550,7 +550,7 @@ def get_alm_numba(
     num_indices = k_amp.size
 
     
-    ncpus = multiprocessing.cpu_count() - 10
+    ncpus = multiprocessing.cpu_count()
     index_thread_split = np.arange(0, num_indices, int(np.ceil(num_indices/ncpus)))
     size = index_thread_split.size
     
