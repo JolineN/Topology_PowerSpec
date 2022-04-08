@@ -31,9 +31,10 @@ class Topology:
         self.debug = debug
 
         print('Running - l_max={}, L={}'.format(self.l_max, int(self.L)))
-        self.root = 'runs/{}_L_{}_l_max_{}_accuracy_{}_percent/'.format(
+        self.root = 'runs/{}_L_{}_beta_{}_l_max_{}_accuracy_{}_percent/'.format(
             self.topology,
             int(self.L),
+            int(self.beta*180/np.pi),
             self.l_max,
             int(self.c_l_accuracy*100)
         )
@@ -48,12 +49,11 @@ class Topology:
         pars.set_cosmology(H0=67.5, ombh2=0.022, omch2=0.122, mnu=0.06, omk=0, tau=0.06)
         pars.InitPower.set_params(As=2e-9, ns=0.965, r=0)
         pars.set_for_lmax(self.l_max)
-        pars.set_accuracy(lSampleBoost = 50)
-        if debug == False:
-            # More accurate transfer functions. Takes longer time to run
-            pars.set_accuracy(AccuracyBoost = 2, lAccuracyBoost = 2, lSampleBoost = 50)
-            pars.Accuracy.IntkAccuracyBoost = 2
-            pars.Accuracy.SourcekAccuracyBoost = 2
+
+        # More accurate transfer functions. Takes longer time to run
+        pars.set_accuracy(AccuracyBoost = 2, lAccuracyBoost = 2, lSampleBoost = 50)
+        pars.Accuracy.IntkAccuracyBoost = 2
+        pars.Accuracy.SourcekAccuracyBoost = 2
         self.pars = pars
 
         # Get the CAMB functions and save them
@@ -85,6 +85,23 @@ class Topology:
 
         l_max = self.l_max
         num_l_m = int((l_max + 1)*(l_max + 2)/2)
+
+        # Get the transfer functions and put them into lists of interpolate objects.
+        # We can therefore evaluate the transfer function for all possibel |k| later
+        assert(self.ell_list[0] == 2 and self.ell_list[l_max-2] == l_max)
+        transfer_interpolate_k_l_list = np.empty_like(scipy.interpolate.interp1d, shape=l_max+1)
+        for l in range(2, l_max+1):
+            transfer_interpolate_k_l_list[l] = scipy.interpolate.interp1d(self.k_list, self.transfer_data[0, l-2, :], kind='quadratic') 
+        self.transfer_interpolate_k_l_list = transfer_interpolate_k_l_list
+
+        # We have a list of k_max as a function of ell. We need to make sure this is large enough
+        self.get_kmax_as_function_of_ell()
+        #if self.is_kmax_high_enough() == False:
+        #    # k_max is not high enough. So we start pre-processing again with a higher k_max for one or more ell
+        #    print('Starting the pre-process again with higher k_max')
+        #    print('\n')
+        #    self.do_pre_processing()
+        #    return
         
         # We find all allowed |k|, phi, theta and put them in big lists
         # The function get_list_of_k_phi_theta is specific to each topology
@@ -99,24 +116,6 @@ class Topology:
         # Number of indices on the k, phi, theta vectors
         # Same as number of sums we have to do for each alm
         num_k_indices = k_amp.size
-
-        # Get the transfer functions and put them into lists of interpolate objects.
-        # We can therefore evaluate the transfer function for all possibel |k| later
-        start_time = time.time()
-        assert(self.ell_list[0] == 2 and self.ell_list[l_max-2] == l_max)
-        transfer_interpolate_k_l_list = np.empty_like(scipy.interpolate.interp1d, shape=l_max+1)
-        for l in range(2, l_max+1):
-            transfer_interpolate_k_l_list[l] = scipy.interpolate.interp1d(self.k_list, self.transfer_data[0, l-2, :], kind='quadratic') 
-        self.transfer_interpolate_k_l_list = transfer_interpolate_k_l_list
-
-        # We have a list of k_max as a function of ell. We need to make sure this is large enough
-        print('Checking if k_max is large enough')
-        if self.is_kmax_high_enough() == False:
-            # k_max is not high enough. So we start pre-processing again with a higher k_max for one or more ell
-            print('Starting the pre-process again with higher k_max')
-            print('\n')
-            self.do_pre_processing()
-            return
 
         # |k|, phi and theta often repeats themselves. We do not want to recalculate spherical harmonics
         # twice or more so we store a list of all unique thetas. Same for |k| to quickly find transfer functions later
@@ -138,7 +137,6 @@ class Topology:
         # Get the transfer function for all unique |k| values
         start_time = time.time()
         transfer_delta_kl = self.get_transfer_functions()
-        print('Size of transfer function: {} MB. Time get transfer_delta_kl: {} s'.format(round(getsizeof(transfer_delta_kl) / 1024 / 1024,2), time.time()-start_time))
         self.scalar_pk_k3 = scalar_pk_k3
         self.transfer_delta_kl = transfer_delta_kl
 
@@ -147,7 +145,7 @@ class Topology:
         integrand = do_integrand_pre_processing(k_amp_unique, scalar_pk_k3, transfer_delta_kl, self.l_max)
         self.integrand = integrand
         print('Size of integrand: {} MB. Time to calculate integrand: {} s'.format(round(getsizeof(integrand) / 1024 / 1024,2), time.time()-start_time))
-
+        print(integrand[10, 10, 10])
         # Store the Healpy ordering of a_lm
         lm_index = np.zeros((l_max+1, l_max+1), dtype=int)
         for l in range(l_max+1):
@@ -161,22 +159,16 @@ class Topology:
         # This is because theta can be found from nz and nx^2+ny^2, and we do not
         # care about phi since we can add the phase in the sum
         start_time = time.time()
-        print('')
-        print('Calculating spherical harmonics')
         sph_harm_no_phase = self.get_sph_harm()
-        print('Time get calculate spherical harmonics:', time.time()-start_time)
         self.sph_harm_no_phase = sph_harm_no_phase
 
-        print('')
-        print('**************')
+        print('\n**************')
         print('Done with all preprocessing')
-        print('**************')
-        print('')
+        print('**************\n')
 
     def get_initial_kmax_list(self):
         # Returns k_max as a function of ell.
-        # This is just an initial guess, but make sure k_max is not too large
-        # otherwise the code will be slow
+        # This is just an initial guess of k_max assuming ell_max = 250
         if np.isclose(self.c_l_accuracy, 0.99):
             k_max = 0.061
         elif np.isclose(self.c_l_accuracy, 0.95):
@@ -191,54 +183,31 @@ class Topology:
 
         self.k_max_list = np.arange(0, l_max+1) * k_max / l_max
 
-    def is_kmax_high_enough(self, plot_lmax_integrand=True):
-        # Calculate c_l up to k_max and compare it to CAMB to see
-        # if the chosen k_max is large enough.
+    def get_kmax_as_function_of_ell(self):
+        # Get k_max as a function of multipole ell
+        # We use cumulative trapezoid to find the k_value where we reach
+        # the wanted accuracy
 
-        # If k_max is too large, this function does not lower it which it should
-        # otherwise some ell have higher power than others
         l_max = self.l_max
-        ratio_lmax = np.ones(l_max+1)
-        for l in tqdm(range(2, l_max+1)):
-            k_max = self.k_max_list[l]
-            k_list = np.linspace(min(self.k_list), k_max, 2**14+1)
+
+        # Do the integration up to k=0.08. This should be fine for ell=<250 and accuracy<=0.99
+        k_max = 0.08
+        print('\nFinding k_max as a function of ell')
+        for l in tqdm(range(2, l_max+1)):            
+            k_list = np.linspace(min(self.k_list), k_max, 2**16+1)
             integrand = 4*pi * self.pars.scalar_power(k_list) * self.transfer_interpolate_k_l_list[l](k_list)**2 / k_list
-            c_l = scipy.integrate.romb(integrand) * (k_list[1]-k_list[0])
-            ratio_lmax[l] = c_l / self.powers[l, 0]
+            
+            cumulative_c_l_ratio = scipy.integrate.cumulative_trapezoid(y=integrand, x=k_list) / self.powers[l, 0]
+            index_closest_to_accuracy_target = (np.abs(cumulative_c_l_ratio -  self.c_l_accuracy)).argmin()
 
-            if ratio_lmax[l] < self.c_l_accuracy:
-                # Increase k_max by 20% if k_max is too low
-                # Should do bisection method in the future
-                self.k_max_list[l] = self.k_max_list[l] * 1.2
-
-        for l in range(l_max+1):
-            # If k_max[ell] > k_max[ell_max] then we set k_max[ell] = k_max[ell_max]
-            if self.k_max_list[l] > self.k_max_list[l_max]: self.k_max_list[l] = self.k_max_list[l_max]
-
-        if plot_lmax_integrand:
-            plt.figure()
-            plt.plot(k_list * np.power(self.V, 1/3)/(2*pi), integrand)
-            plt.savefig(self.root+'figs/transfer_squared_P_k_k_ell{}_L_{}.pdf'.format(l, int(self.L)))
+            self.k_max_list[l] = k_list[index_closest_to_accuracy_target]
+            #print(cumulative_c_l_ratio[index_closest_to_accuracy_target], 'for ell =', l, 'k=', self.k_max_list[l])
+        print('\n********************************************')
+        print('Done. k_max for ell_max =', self.k_max_list[l_max])
+        print('********************************************\n')
     
-        print('Ratios between continous integration up to k_max for each ell. ell=2:', ratio_lmax[2], 'ell=l_max:', ratio_lmax[l_max], 'min/max', min(ratio_lmax[3:]), max(ratio_lmax[3:]))
-        
-        #print('k_max list as a function of ell:', self.k_max_list)
-        if min(ratio_lmax) < self.c_l_accuracy:
-            # k_max is not high enough. We need to go to increase k_max
-            print('k_max of was not high enough for one or more ell')
-            return False
-        else:
-            print('')
-            print('******************')
-            print('k_max is high enough (make sure it is not too high, otherwise it will be slow)')
-            print('******************')
-            print('')
-            np.save(self.root+'k_max_list.npy', self.k_max_list)
-            return True
-
     def calculate_c_lmlpmp(self, only_diag=False):
         # Calculates the off-diagonal and on-diagonal power spectrum
-
         l_max = self.l_max
         L = self.L
 
@@ -247,10 +216,8 @@ class Topology:
         lm_index = self.lm_index
 
         time_start = time.time()
-        print(type(self.sph_harm_no_phase[1000, self.lm_index[230, 200]]))
-        print(self.sph_harm_no_phase[1000, self.lm_index[230, 200]])
         
-        print('Done pre-processing. Starting Numba')
+        print('\nDone pre-processing. Starting Numba')
         C_TT_lmlpmp = get_c_lmlpmp(
             V=self.V,
             k_amp=self.k_amp,
@@ -440,10 +407,11 @@ class Topology:
         ncpus = multiprocessing.cpu_count()
         os.environ['OMP_NUM_THREADS'] = '1'
         pool = multiprocessing.Pool(processes=ncpus)
-        print('Minimum k_amp:', min(self.k_amp_unique))
+        print('\nGetting transfer functions')
         args = zip(np.arange(num_k_amp_unique), repeat(self.l_max), repeat(self.k_amp_unique), repeat(self.k_max_list), repeat(self.transfer_interpolate_k_l_list), repeat(self.k_list))
         with multiprocessing.Pool(processes=ncpus) as pool:
-            transfer_delta_kl = np.array(pool.starmap(transfer_parallel, args))
+            transfer_delta_kl = np.array(pool.starmap(transfer_parallel, tqdm(args, total=num_k_amp_unique)))
+            print('Size of transfer function: {} MB.'.format(round(getsizeof(transfer_delta_kl) / 1024 / 1024,2)), '\n')
             return transfer_delta_kl
 
     def get_sph_harm(self):
@@ -459,10 +427,11 @@ class Topology:
         ncpus = multiprocessing.cpu_count()
         os.environ['OMP_NUM_THREADS'] = '1'
         pool = multiprocessing.Pool(processes=ncpus)
+        print('\nGetting spherical harmonics')
         args = zip(np.arange(unique_theta_length), repeat(self.l_max), repeat(self.theta_unique), repeat(self.lm_index), repeat(num_l_m))
         with multiprocessing.Pool(processes=ncpus) as pool:
-            sph_harm_no_phase = np.array(pool.starmap(get_sph_harm_parallel, args), dtype=np.floating)
-            print('The spherical harmonics array is', round(getsizeof(sph_harm_no_phase) / 1024 / 1024,2), 'MB')
+            sph_harm_no_phase = np.array(pool.starmap(get_sph_harm_parallel, tqdm(args, total=unique_theta_length)), dtype=np.float32)
+            print('The spherical harmonics array is', round(getsizeof(sph_harm_no_phase) / 1024 / 1024,2), 'MB \n')
             return sph_harm_no_phase
 
 

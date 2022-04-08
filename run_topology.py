@@ -1,6 +1,6 @@
-import os
-os.environ['OPENBLAS_NUM_THREADS'] = '1'
-os.environ['OMP_NUM_THREADS'] = '1'
+#import os
+#os.environ['OPENBLAS_NUM_THREADS'] = '1'
+#os.environ['OMP_NUM_THREADS'] = '1'
 from src.E1 import E1
 import numpy as np
 from numpy import pi, sqrt, cos
@@ -12,7 +12,7 @@ import parameter_files.default as parameter_file
 
 param = parameter_file.parameter
 
-a = E1(debug=True, param=param)
+a = E1(param=param)
 
 c_l_a = a.make_alm_realizations(plot_alm=True, save_alm = False, it=4)
 
