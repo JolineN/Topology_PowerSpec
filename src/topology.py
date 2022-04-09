@@ -15,7 +15,7 @@ import pyshtools as pysh
 from sys import getsizeof
 import numba
 from numba import njit, prange
-
+from collections import defaultdict
 
 class Topology:
     def __init__(self, param, debug=True):
@@ -119,15 +119,16 @@ class Topology:
 
         # |k|, phi and theta often repeats themselves. We do not want to recalculate spherical harmonics
         # twice or more so we store a list of all unique thetas. Same for |k| to quickly find transfer functions later
+        print('\nThis part is slow, but it can be optimized in the future')
         start_time = time.time()
-        k_index_repeat, k_amp_unique, k_amp_unique_index, theta_index_repeat, theta_unique, theta_unique_index = get_k_theta_index_repeat(k_amp, theta)
+        k_amp_unique, k_amp_unique_index, theta_unique, theta_unique_index = get_k_theta_index_repeat(k_amp, theta)
         print('Time to get unique k and theta:', time.time()-start_time, 'seconds')
 
-        self.k_index_repeat = k_index_repeat
+        #self.k_index_repeat = k_index_repeat
         self.k_amp_unique = k_amp_unique
         self.k_amp_unique_index = k_amp_unique_index
 
-        self.theta_index_repeat = theta_index_repeat
+        #self.theta_index_repeat = theta_index_repeat
         self.theta_unique = theta_unique
         self.theta_unique_index = theta_unique_index
 
@@ -422,8 +423,7 @@ class Topology:
         theta = self.theta
 
         # We only find Y_lm for unique theta elements. We don't want to recalculate Y_lm unnecessarily
-        unique_theta_length = np.count_nonzero(self.theta_index_repeat==-1)
-        assert(self.theta_unique.size == unique_theta_length)
+        unique_theta_length = self.theta_unique.size
         ncpus = multiprocessing.cpu_count()
         os.environ['OMP_NUM_THREADS'] = '1'
         pool = multiprocessing.Pool(processes=ncpus)
@@ -455,39 +455,49 @@ def transfer_parallel(i, l_max, k_amp, k_max_list, transfer_interpolate_k_l_list
     cur_transfer_i[l] = transfer_interpolate_k_l_list[l](k)
   return cur_transfer_i
 
-@njit(parallel=True)
+#@njit(parallel=True)
 def get_k_theta_index_repeat(k_amp, theta):
     # k and theta often repeats themselves in the full list of allowed wavenumber list
     # So we want to know when they have repeated values so that we dont have to
     # recalculate spherical harmonics for example.
+
+    # The unique lists are the lists of only unique elements
+    # The unique_index lists are the indices going form the full parameter list to the
+    # unique list.
+    # For example:
+    # k = [1, 2, 3, 1, 2, 5]
+    # k_unique = [1, 2, 3, 5]
+    # k_unique_index = [0, 1, 2, 0, 1, 3]
+    
+    k_repeat_dict = defaultdict(list)
+    theta_repeat_dict = defaultdict(list)
     length = theta.size
-    theta_repeat = -1 * np.ones(length, dtype=numba.int32)
-    k_repeat = -1 * np.ones(length, dtype=numba.int32)
-    for i in prange(length):
-        theta_repeat[i] = isclose(theta[:i], theta[i])
-        k_repeat[i] = isclose(k_amp[:i], k_amp[i])
 
-    print('How many unique theta', np.count_nonzero(theta_repeat == -1) / length)
-    print('How many unique k_amp', np.count_nonzero(k_repeat == -1) / length)
+    print('Getting repeated theta and k elements')
+    for i in tqdm(range(length)):
+        theta_repeat_dict[np.round(theta[i], decimals=7)].append(i)
+        k_repeat_dict[np.round(k_amp[i], decimals=7)].append(i)
 
-    print('This part is slow, but it can be optimized in the future')
-    # This part of the code is slow and should be optimized.
-    theta_unique, theta_unique_index = get_unique_array_indices(
-      theta,
-      theta_repeat
-    )
-    unique_theta_length = np.count_nonzero(theta_repeat==-1)
-    assert(unique_theta_length == theta_unique.size)
+    theta_unique_dict = np.zeros(np.fromiter(theta_repeat_dict.keys(), dtype=float).size)
+    theta_unique_index_dict = np.zeros(length, dtype=int)
+    index = 0
+    for key, value in theta_repeat_dict.items():
+        theta_unique_index_dict[value] = index
+        theta_unique_dict[index] = key
+        index += 1
 
-    k_amp_unique, k_amp_unique_index = get_unique_array_indices(
-      k_amp,
-      k_repeat
-    )
-    unique_k_length = np.count_nonzero(k_repeat==-1)
-    assert(unique_theta_length == theta_unique.size)
+    k_amp_unique_dict = np.zeros(np.fromiter(k_repeat_dict.keys(), dtype=float).size)
+    k_amp_unique_index_dict = np.zeros(length, dtype=int)
+    index = 0
+    for key, value in k_repeat_dict.items():
+        k_amp_unique_index_dict[value] = index
+        k_amp_unique_dict[index] = key
+        index += 1
 
-    return k_repeat, k_amp_unique, k_amp_unique_index, theta_repeat, theta_unique, theta_unique_index 
+    print('Ratio of unique theta:', theta_unique_dict.size / length)
+    print('Ratio of unique |k|:', k_amp_unique_dict.size / length)
 
+    return k_amp_unique_dict, k_amp_unique_index_dict, theta_unique_dict, theta_unique_index_dict
 @njit
 def do_integrand_pre_processing(unique_k_amp, scalar_pk_k3, transfer_delta_kl, l_max):
     # Calculating P(k) / k^3 * Delta_ell(k) * Delta_ell'(k) 
