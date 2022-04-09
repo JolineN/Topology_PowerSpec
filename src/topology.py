@@ -119,7 +119,6 @@ class Topology:
 
         # |k|, phi and theta often repeats themselves. We do not want to recalculate spherical harmonics
         # twice or more so we store a list of all unique thetas. Same for |k| to quickly find transfer functions later
-        print('\nThis part is slow, but it can be optimized in the future')
         start_time = time.time()
         k_amp_unique, k_amp_unique_index, theta_unique, theta_unique_index = get_k_theta_index_repeat(k_amp, theta)
         print('Time to get unique k and theta:', time.time()-start_time, 'seconds')
