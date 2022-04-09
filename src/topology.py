@@ -23,17 +23,18 @@ class Topology:
         self.topology = param['topology']
         self.l_max = param['l_max']
         self.c_l_accuracy = param['c_l_accuracy']
-        self.L = param['Lx'] * 28 * 1e3 # Defined in MPc
 
         self.get_initial_kmax_list()
 
         self.fig_name = 'l_max_{}'.format(self.l_max)
         self.debug = debug
 
-        print('Running - l_max={}, L={}'.format(self.l_max, int(self.L)))
-        self.root = 'runs/{}_L_{}_beta_{}_l_max_{}_accuracy_{}_percent/'.format(
+        print('Running - l_max={}, Lx={}'.format(self.l_max, int(self.Lx)))
+        self.root = 'runs/{}_Lx_{}_Ly_{}_Lz_{}_beta_{}_l_max_{}_accuracy_{}_percent/'.format(
             self.topology,
-            int(self.L),
+            int(self.Lx),
+            int(self.Ly),
+            int(self.Lz),
             int(self.beta*180/np.pi),
             self.l_max,
             int(self.c_l_accuracy*100)
@@ -207,7 +208,6 @@ class Topology:
     def calculate_c_lmlpmp(self, only_diag=False):
         # Calculates the off-diagonal and on-diagonal power spectrum
         l_max = self.l_max
-        L = self.L
 
         # We use healpy ordering of the a_{lm}. We use a 1d array, instead of 2d.
         num_l_m = int((l_max + 1)*(l_max + 2)/2)
@@ -281,9 +281,15 @@ class Topology:
                 fig2 = plt.figure()
                 map = hp.alm2map(a_lm, 128, pol=False)
                 hp.mollview(map, fig=fig2, remove_dip=True)
-                fig2.savefig(self.root+'realizations/map_L{}_lmax_{}_{}.pdf'.format(int(self.L), l_max, i))
+                fig2.savefig(self.root+'realizations/map_{}.pdf'.format(i))
 
-        if save_alm: np.save(self.root+'realizations/realizations_L_{}_lmax_{}_num_{}.npy'.format(int(self.L), l_max, it), alm_list)
+        if save_alm: np.save(self.root+'realizations/realizations_Lx_{}_Ly_{}_Lz_{}_lmax_{}_num_{}.npy'.format(
+            int(self.Lx),
+            int(self.Ly),
+            int(self.Lz),
+            l_max,
+            it),
+            alm_list)
 
         return cl_list
 
@@ -309,13 +315,13 @@ class Topology:
         plt.plot(self.C_TT_diag, label='Topology C_l (Discrete sum)')
         plt.plot(self.powers[:l_max+1, 0], label='CAMB C_l (Continuous integration)')
         #np.save('C_TT_top.npy', self.C_TT_diag)
-        np.save(self.root+'realizations/c_TT_L_{}_lmax_{}.npy'.format(int(self.L), self.l_max), self.C_TT)
+        np.save(self.root+'realizations/c_TT_Lx_{}_lmax_{}.npy'.format(int(self.Lx), self.l_max), self.C_TT)
         plt.legend()
         plt.yscale('log')
         plt.ylabel(r'$C^{TT}_{\ell} \,\, [\mu K^2]$ ')
         plt.xlabel(r'$\ell$')
         plt.title(r'$L={{{}}}$ Mpc'.format(int(L)))
-        plt.savefig(self.root+'figs/tmp_{}_L_{}.pdf'.format(self.fig_name, int(self.L)))
+        plt.savefig(self.root+'figs/tmp_{}_Lx_{}.pdf'.format(self.fig_name, int(self.Lx)))
 
         # Plot covariance
         lmax = self.l_max
@@ -382,7 +388,7 @@ class Topology:
         D_l_cv = get_D_l(sqrt(cosmic_variance))
 
         plt.figure()
-        plt.plot(ell, get_D_l(self.C_TT_diag)[l_min:self.l_max+1], linewidth=4, label='L={} True C_l'.format(int(self.L)))
+        plt.plot(ell, get_D_l(self.C_TT_diag)[l_min:self.l_max+1], linewidth=4, label='Lx={} True C_l'.format(int(self.Lx)))
         plt.plot(ell, correct_D_l[l_min:self.l_max+1], linewidth=4, label='CAMB')
 
         plt.fill_between(ell, (correct_D_l - D_l_cv)[l_min:], (correct_D_l + D_l_cv)[3:], color='grey', alpha=0.5)
@@ -394,7 +400,7 @@ class Topology:
         plt.ylabel(r'$\ell (\ell+1)C^{TT}_\ell / 2\pi \, [\mu K^2]$')
         plt.xlabel(r'$\ell$')
         plt.xscale('log')
-        plt.savefig(self.root+'figs/power_spectrum_L_{}_l_max_{}.pdf'.format(int(self.L), l_max))
+        plt.savefig(self.root+'figs/power_spectrum.pdf')
 
     def get_transfer_functions(self):
         # Get all the transfer functions
