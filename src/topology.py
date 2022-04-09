@@ -123,11 +123,9 @@ class Topology:
         k_amp_unique, k_amp_unique_index, theta_unique, theta_unique_index = get_k_theta_index_repeat(k_amp, theta)
         print('Time to get unique k and theta:', time.time()-start_time, 'seconds')
 
-        #self.k_index_repeat = k_index_repeat
         self.k_amp_unique = k_amp_unique
         self.k_amp_unique_index = k_amp_unique_index
 
-        #self.theta_index_repeat = theta_index_repeat
         self.theta_unique = theta_unique
         self.theta_unique_index = theta_unique_index
 

@@ -14,7 +14,7 @@ param = parameter_file.parameter
 
 a = E1(param=param)
 
-c_l_a = a.make_alm_realizations(plot_alm=True, save_alm = False, it=4)
+c_l_a = a.make_alm_realizations(plot_alm=True, save_alm = True, it=1000)
 
 a.calculate_c_lmlpmp(only_diag=True)
 
