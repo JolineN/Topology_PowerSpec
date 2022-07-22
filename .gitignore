@@ -3,6 +3,8 @@ realizations/
 leftovers/
 runs/
 save/
+kl_run/
+plotting/
 *.pyc
 *.pdf
 __pycache__/

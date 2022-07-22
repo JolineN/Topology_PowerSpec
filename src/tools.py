@@ -1,12 +1,10 @@
 from numba import njit, prange
 import numba
 import numpy as np
-from numpy import sqrt, pi
-import scipy.special as spc
-import healpy as hp
-import math
-import time
+from numpy import pi
 import pyshtools as pysh
+from collections import defaultdict
+from tqdm import tqdm
 
 @njit
 def cart2phi(x, y):
@@ -19,7 +17,6 @@ def cart2theta(xy_squared, z):
 @njit
 def cart2spherical(xyz):
     # Calculates spherical coordinates from cartesian coordinates
-    spherical_coords = np.zeros(2)
     xy = xyz[0]**2 + xyz[1]**2
 
     #phi
@@ -82,7 +79,8 @@ def get_unique_array_indices(full_param_array, param_repeat):
 @njit
 def get_c_l_from_a_lm(a_lm, l_max):
     c_l = np.zeros(l_max+1)
-    for l in range(1, l_max+1):
+    for l in range(2, l_max+1):
+        # m = 0
         id = get_idx(l_max, l, 0)
         c_l[l] += np.abs(a_lm[id]) ** 2
         for m in range(1, l+1):
@@ -91,3 +89,106 @@ def get_c_l_from_a_lm(a_lm, l_max):
             c_l[l] += 2 * np.abs(alm) ** 2
         c_l[l] /= 2*l+1
     return c_l
+
+@njit
+def get_c_l_from_c_lmlpmp(c_lmlpmp, l_max):
+    c_l = np.zeros(l_max+1, dtype=np.complex128)
+    for l in range(l_max+1):
+        for m in range(-l, l+1):
+            lm_id = l * (l+1) + m
+            
+            c_l[l] += c_lmlpmp[lm_id, lm_id]
+        c_l[l] /= 2*l + 1
+    return np.real(c_l)
+
+def get_sph_harm_parallel(i, l_max, theta, lm_index, num_l_m):
+  # Get the spherical harmonics with no phase (phi=0) for a given index i
+  sph_harm_no_phase_i = np.zeros(num_l_m, dtype=np.float64)
+  theta_cur = theta[i]
+  all_sph_harm_no_phase = np.real(pysh.expand.spharm(l_max, theta_cur, 0, kind = 'complex', degrees = False, normalization = 'ortho', csphase=-1))
+  for l in range(l_max+1):
+      for m in range(l+1):
+          cur_index = lm_index[l, m]
+          sph_harm_no_phase_i[cur_index] = all_sph_harm_no_phase[0, l, m]      
+  return sph_harm_no_phase_i
+
+def transfer_parallel(i, l_max, k_amp, transfer_interpolate_k_l_list):
+  # Get the transfer function for a given index i
+  cur_transfer_i = np.zeros(l_max+1)
+  k = k_amp[i]
+  for l in range(2, l_max+1):
+    cur_transfer_i[l] = transfer_interpolate_k_l_list[l](k)
+  return cur_transfer_i
+
+#@njit(parallel=True)
+def get_k_theta_index_repeat(k_amp, theta):
+    # k and theta often repeats themselves in the full list of allowed wavenumber list
+    # So we want to know when they have repeated values so that we dont have to
+    # recalculate spherical harmonics for example.
+
+    # The unique lists are the lists of only unique elements
+    # The unique_index lists are the indices going form the full parameter list to the
+    # unique list.
+    # For example:
+    # k = [1, 2, 3, 1, 2, 5]
+    # k_unique = [1, 2, 3, 5]
+    # k_unique_index = [0, 1, 2, 0, 1, 3]
+    
+    k_repeat_dict = defaultdict(list)
+    theta_repeat_dict = defaultdict(list)
+    length = theta.size
+
+    print('Getting repeated theta and k elements')
+    for i in tqdm(range(length)):
+        theta_repeat_dict[np.round(theta[i], decimals=7)].append(i)
+        k_repeat_dict[np.round(k_amp[i], decimals=7)].append(i)
+
+    theta_unique_dict = np.zeros(np.fromiter(theta_repeat_dict.keys(), dtype=float).size)
+    theta_unique_index_dict = np.zeros(length, dtype=int)
+    index = 0
+    for key, value in theta_repeat_dict.items():
+        theta_unique_index_dict[value] = index
+        theta_unique_dict[index] = key
+        index += 1
+
+    k_amp_unique_dict = np.zeros(np.fromiter(k_repeat_dict.keys(), dtype=float).size)
+    k_amp_unique_index_dict = np.zeros(length, dtype=int)
+    index = 0
+    for key, value in k_repeat_dict.items():
+        k_amp_unique_index_dict[value] = index
+        k_amp_unique_dict[index] = key
+        index += 1
+
+    print('Ratio of unique theta:', theta_unique_dict.size / length)
+    print('Ratio of unique |k|:', k_amp_unique_dict.size / length)
+
+    return k_amp_unique_dict, k_amp_unique_index_dict, theta_unique_dict, theta_unique_index_dict
+
+@njit
+def do_integrand_pre_processing(unique_k_amp, scalar_pk_k3, transfer_delta_kl, l_max):
+    # Calculating P(k) / k^3 * Delta_ell(k) * Delta_ell'(k) 
+    num_k_amp = unique_k_amp.size
+    integrand = np.zeros((num_k_amp, l_max+1, l_max+1))
+    for i in prange(num_k_amp):
+        scalar_pk_k3_cur = scalar_pk_k3[i]
+        for l in range(2, l_max+1):
+            scalar_pk_k3_transfer_delta_kl = scalar_pk_k3_cur * transfer_delta_kl[i, l]
+            for lp in range(2, l_max+1):
+                integrand[i, l, lp] = scalar_pk_k3_transfer_delta_kl * transfer_delta_kl[i, lp]
+    return integrand
+
+@njit
+def normalize_c_lmlpmp(c_lmlpmp, l_max, camb_c_l, cl_accuracy=1):
+    normalized_c_lmlpmp = np.zeros((c_lmlpmp.shape), dtype=np.complex128)
+    for l in range(2, l_max+1):
+        for m in range(-l, l+1):
+            index = l * (l+1) + m
+            for lp in range(2, l_max+1):
+                for mp in range(-lp, lp+1):
+                    index_p = lp * (lp+1) + mp                        
+                    normalized_c_lmlpmp[index, index_p] = c_lmlpmp[index, index_p] / (np.sqrt(camb_c_l[l]*camb_c_l[lp]) * cl_accuracy)
+    return normalized_c_lmlpmp
+
+#Things to add:
+# 1) Calculating all off-diagonal elements take time, maybe add a bool that if true only calculates diagonal elements
+# 2) A way to generalize for different topologies. Class inheritance?
