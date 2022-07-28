@@ -3,8 +3,6 @@ import numba
 import numpy as np
 from numpy import pi
 import pyshtools as pysh
-from collections import defaultdict
-from tqdm import tqdm
 
 @njit
 def cart2phi(x, y):
@@ -134,35 +132,15 @@ def get_k_theta_index_repeat(k_amp, theta):
     # k_unique = [1, 2, 3, 5]
     # k_unique_index = [0, 1, 2, 0, 1, 3]
     
-    k_repeat_dict = defaultdict(list)
-    theta_repeat_dict = defaultdict(list)
     length = theta.size
 
     print('Getting repeated theta and k elements')
-    for i in tqdm(range(length)):
-        theta_repeat_dict[np.round(theta[i], decimals=7)].append(i)
-        k_repeat_dict[np.round(k_amp[i], decimals=7)].append(i)
+    k_amp_unique, k_amp_unique_index = np.unique(np.round(k_amp, decimals=7), return_inverse=True)
+    theta_unique, theta_unique_index = np.unique(np.round(theta, decimals=7), return_inverse=True)
+    print('Ratio of unique theta:', theta_unique.size / length)
+    print('Ratio of unique |k|:', k_amp_unique.size / length)
 
-    theta_unique_dict = np.zeros(np.fromiter(theta_repeat_dict.keys(), dtype=float).size)
-    theta_unique_index_dict = np.zeros(length, dtype=int)
-    index = 0
-    for key, value in theta_repeat_dict.items():
-        theta_unique_index_dict[value] = index
-        theta_unique_dict[index] = key
-        index += 1
-
-    k_amp_unique_dict = np.zeros(np.fromiter(k_repeat_dict.keys(), dtype=float).size)
-    k_amp_unique_index_dict = np.zeros(length, dtype=int)
-    index = 0
-    for key, value in k_repeat_dict.items():
-        k_amp_unique_index_dict[value] = index
-        k_amp_unique_dict[index] = key
-        index += 1
-
-    print('Ratio of unique theta:', theta_unique_dict.size / length)
-    print('Ratio of unique |k|:', k_amp_unique_dict.size / length)
-
-    return k_amp_unique_dict, k_amp_unique_index_dict, theta_unique_dict, theta_unique_index_dict
+    return k_amp_unique, k_amp_unique_index, theta_unique, theta_unique_index
 
 @njit
 def do_integrand_pre_processing(unique_k_amp, scalar_pk_k3, transfer_delta_kl, l_max):
