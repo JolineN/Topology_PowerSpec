@@ -243,6 +243,10 @@ def get_c_lmlpmp(
       m_list = np.arange(0, l_max+1)
       phase_list = np.exp(-1j * phi[i] * m_list)
 
+      # Powers of i so we can get them as an array call instead of recalculating them every time.
+      # 1j**n == ipow[n%4], even for n<0.
+      ipow = 1j**np.arange(4)
+
       for l in range(ell_range[0], ell_range[1]+1):
         if k_amp_cur > k_max_list[l] and k_amp_cur > min_k_amp:
             continue
@@ -261,7 +265,7 @@ def get_c_lmlpmp(
                 # Only do l-lp = 0 mod 2. Holds for general torus
                 for l_p in range(l%2 + ell_p_range[0], ell_p_range[1]+1, 2):
                     
-                    integrand_il_sphm = integrand[k_unique_index_cur, l, l_p] * np.power(1j, l-l_p) * sph_harm_lm_conj
+                    integrand_il_sphm = integrand[k_unique_index_cur, l, l_p] * ipow[(l-l_p)%4] * sph_harm_lm_conj
                     
                     # Negative m_p are calculated later
                     # Only do m-mp = 0 mod 2

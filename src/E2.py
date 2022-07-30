@@ -280,6 +280,10 @@ def get_c_lmlpmp(
 
       cur_tilde_xi = tilde_xi[i, :]
 
+      # Powers of i so we can get them as an array call instead of recalculating them every time.
+      # 1j**n == ipow[n%4], even for n<0.
+      ipow = 1j**np.arange(4)
+
       for l in range(ell_range[0], ell_range[1]+1):
         if k_amp_cur > k_max_list[l]:
             continue
@@ -300,7 +304,7 @@ def get_c_lmlpmp(
             else:
                 #for l_p in range(ell_p_range[0], ell_p_range[1]+1):
                 for l_p in range(l%2 + ell_p_range[0], ell_p_range[1]+1, 2):
-                    integrand_il = integrand[k_unique_index_cur, l, l_p] * np.power(1j, l-l_p)
+                    integrand_il = integrand[k_unique_index_cur, l, l_p] * ipow[(l-l_p)%4]
                     
                     for m_p in range(-l_p, l_p + 1):
                         lm_p_index_cur = l_p * (l_p + 1) + m_p
