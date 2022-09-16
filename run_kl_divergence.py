@@ -14,7 +14,7 @@ num = 8
 L = np.linspace(0.6, 1.3, num)
 root = 'kl_run/'
 
-l_max_list = np.array([10, 20, 30, 40])
+l_max_list = np.array([10, 20, 30])
 
 param_E1 = parameter_file_E1.parameter
 param_E2 = parameter_file_E2.parameter
@@ -32,7 +32,7 @@ for l_max in l_max_list:
 
     a = E1(param=param_E1)
 
-    cur_kl, cur_a_t = a.calculate_kl_divergence()
+    cur_kl, cur_a_t = a.calculate_exact_kl_divergence()
     kl[i] = cur_kl
     a_t[i] = cur_a_t
     print('E1 Currenct kl!')

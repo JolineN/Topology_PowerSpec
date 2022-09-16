@@ -95,7 +95,10 @@ def get_c_l_from_c_lmlpmp(c_lmlpmp, l_max):
         for m in range(-l, l+1):
             lm_id = l * (l+1) + m
             
-            c_l[l] += c_lmlpmp[lm_id, lm_id]
+            if c_lmlpmp.ndim == 1:
+                c_l[l] += c_lmlpmp[lm_id]
+            else:
+                c_l[l] += c_lmlpmp[lm_id, lm_id]
         c_l[l] /= 2*l + 1
     return np.real(c_l)
 
@@ -118,7 +121,6 @@ def transfer_parallel(i, l_max, k_amp, transfer_interpolate_k_l_list):
     cur_transfer_i[l] = transfer_interpolate_k_l_list[l](k)
   return cur_transfer_i
 
-#@njit(parallel=True)
 def get_k_theta_index_repeat(k_amp, theta):
     # k and theta often repeats themselves in the full list of allowed wavenumber list
     # So we want to know when they have repeated values so that we dont have to
@@ -156,14 +158,14 @@ def do_integrand_pre_processing(unique_k_amp, scalar_pk_k3, transfer_delta_kl, l
     return integrand
 
 @njit
-def normalize_c_lmlpmp(c_lmlpmp, l_max, camb_c_l, cl_accuracy=1):
+def normalize_c_lmlpmp(c_lmlpmp, camb_c_l, l_min, l_max, lp_min, lp_max, cl_accuracy=1):
     normalized_c_lmlpmp = np.zeros((c_lmlpmp.shape), dtype=np.complex128)
-    for l in range(2, l_max+1):
+    for l in range(l_min, l_max+1):
         for m in range(-l, l+1):
-            index = l * (l+1) + m
-            for lp in range(2, l_max+1):
+            index = l * (l+1) + m - l_min**2
+            for lp in range(lp_min, lp_max+1):
                 for mp in range(-lp, lp+1):
-                    index_p = lp * (lp+1) + mp                        
+                    index_p = lp * (lp+1) + mp - lp_min**2                    
                     normalized_c_lmlpmp[index, index_p] = c_lmlpmp[index, index_p] / (np.sqrt(camb_c_l[l]*camb_c_l[lp]) * cl_accuracy)
     return normalized_c_lmlpmp
 

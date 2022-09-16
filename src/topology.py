@@ -246,21 +246,12 @@ class Topology:
                 ell_range = ell_range,
                 ell_p_range = ell_p_range
             )
-            
-            A_ssp = normalize_c_lmlpmp(C_TT_lmlpmp, self.l_max, self.powers[:, 0], cl_accuracy = self.c_l_accuracy)
-            A_ssp = A_ssp[4:, 4:]
-            res = np.sum(np.abs(1/np.diag(A_ssp)))
-            print('RES!!', res)
-            plt.figure()
-            plt.plot(np.diag(A_ssp))
-            plt.savefig('tmp.pdf')
-
             print('Time to calculate C_TT with l_max={} and c_l_ratio={}:'.format(l_max, self.c_l_accuracy), time.time()-time_start, 'seconds with Numba')            
             
             self.C_TT_diag = get_c_l_from_c_lmlpmp(C_TT_lmlpmp, self.l_max)
         elif plotting == False:
-            ell_range = np.array([0, self.l_max])
-            ell_p_range = np.array([0, self.l_max])
+            ell_range = np.array([2, self.l_max])
+            ell_p_range = np.array([2, self.l_max])
             C_TT_lmlpmp = self.get_c_lmlpmp_top(
                 ell_range = ell_range,
                 ell_p_range = ell_p_range
@@ -295,10 +286,14 @@ class Topology:
             else:
                 ncols=1
                 nrows = num_plots
-            fig, ax = plt.subplots(ncols = ncols, nrows = nrows)
+            fig, ax = plt.subplots(ncols = ncols, nrows = nrows, dpi=500)
             axs = np.array(ax)
 
             for i, ax in enumerate(tqdm(axs.reshape(-1))):
+                l_min = plot_param['l_ranges'][i, 0]
+                l_max = plot_param['l_ranges'][i, 1]
+                lp_min = plot_param['lp_ranges'][i, 0]
+                lp_max = plot_param['lp_ranges'][i, 1]
                 # Make sure the l_ranges do not overlap!
                 ell_range = np.array(plot_param['l_ranges'][i, :])
                 ell_p_range = np.array(plot_param['lp_ranges'][i, :])
@@ -306,11 +301,19 @@ class Topology:
                     ell_range = ell_range,
                     ell_p_range = ell_p_range
                 )
-                if plot_param['l_ranges'][i, 1] > 30 or plot_param['lp_ranges'][i, 1] > 30:
+                if l_max > 30 or lp_max > 30:
+                    normalized_clmlpmp = normalize_c_lmlpmp(
+                        C_TT_lmlpmp, 
+                        self.powers[:, 0], 
+                        l_min=l_min, 
+                        l_max=l_max, 
+                        lp_min = lp_min,
+                        lp_max = lp_max)
+
                     np.save(self.root+'corr_matrix_l_{}_{}_lp_{}_{}.npy'.format(
-                        plot_param['l_ranges'][i, 0], plot_param['l_ranges'][i, 1],
-                        plot_param['lp_ranges'][i, 0], plot_param['lp_ranges'][i, 1],
-                    ), C_TT_lmlpmp)
+                        l_min, l_max,
+                        lp_min, lp_max,
+                    ), normalized_clmlpmp)
                 
                 im = self.do_cov_sub_plot(ax, normalize, i, C_TT_lmlpmp, ell_range, ell_p_range)
                 
@@ -319,7 +322,9 @@ class Topology:
             fig.colorbar(im, cax=cbar_ax)
             fig.subplots_adjust(hspace=.4, wspace=-0.1)
             #fig.tight_layout()
-            plt.savefig(self.root+'figs/c_tt_offdiagonal.pdf', bbox_inches='tight')
+            plt.savefig(
+                self.root+'figs/c_tt_offdiagonal_{}.pdf'.format('high_ell' if ell_range[1]>50 or ell_p_range[1]> 50 else 'low_ell'),
+                bbox_inches='tight')
         return C_TT_lmlpmp
 
     def make_alm_realizations(self, plot_alm=True, save_alm = False, it=2):
@@ -386,61 +391,16 @@ class Topology:
 
         np.save(self.root+'realizations/realizations_L_infty_lmax_{}_num_{}.npy'.format(l_max, it), alm_list)
 
-    def plot_c_lmlpmp(self):
-        # Plot covariance
-        lmax = self.l_max
-        C_TT_order = np.abs(self.C_TT_lmlpmp)#np.zeros(self.C_TT_lmlpmp.shape, dtype=np.complex128)
-        '''for l in range(self.l_max+1):
-            for m in range(l+1):
-                id = hp.Alm.getidx(self.l_max, l, m)
-                for lp in range(self.l_max+1):
-                    for mp in range(lp+1):
-                        idp = hp.Alm.getidx(self.l_max, lp, mp)
-                        #lm = 00, lm = 10, lm = 11, lm=20, lm=21, lm=22, lm=30, lm=31
-                        #i =0        1        2      3       4       5       6     7
-
-                        C_TT_order[int(l * (l+1) / 2) + m, int(lp * (lp+1) / 2) + mp] = self.C_TT_lmlpmp[id, idp]
-'''
-        ell_ranges = np.array([l * (l+1)  for l in range(1, lmax+1)])
-        ell_labels = np.arange(1, self.l_max+1)
-        print(ell_labels)
-
-        plt.figure()
-        plt.imshow(np.abs(C_TT_order), norm=LogNorm())
-        plt.xlabel(r'$\ell$')
-        plt.xticks(ticks=ell_ranges, label=ell_labels)
-        plt.yticks(ticks=ell_ranges, label=ell_labels)
-        ax = plt.gca() # grab the current axis
-        ax.set_xticklabels(ell_labels)
-        ax.set_yticklabels(ell_labels)
-
-        plt.ylabel(r'$\ell$')
-        plt.clim(1e-3, 1e3)
-        plt.colorbar()
-        plt.savefig(self.root+'figs/c_tt_off_diag.pdf')
-
-    def calculate_kl_divergence(self):
+    def calculate_exact_kl_divergence(self):
         print('Calculating KL divergence')
 
         c_lmlpmp_ordered = self.calculate_c_lmlpmp(only_diag=False, normalize=False, plotting = False)
-        c_l_camb = self.powers[:, 0]
-
-        size = self.l_max * (self.l_max+1) + self.l_max + 1
-
-        A_ssp = normalize_c_lmlpmp(c_lmlpmp_ordered, self.l_max, self.powers[:, 0], cl_accuracy = self.c_l_accuracy)
-
-        # Remove l=0 and l=1
-        A_ssp = A_ssp[4:, 4:]
+        A_ssp = normalize_c_lmlpmp(c_lmlpmp_ordered, self.powers[:, 0], cl_accuracy = self.c_l_accuracy, l_min=2, lp_min=2, l_max=self.l_max, lp_max=self.l_max)
 
         w, _ = np.linalg.eig(A_ssp)
         t = 0
         for eig in w:
             t += (np.log(np.abs(eig)) + 1/eig - 1)/2
-        
-        c_lmlpmp_camb = np.zeros((size, size))
-        for l in range(2, self.l_max+1):
-            for m in range(-l, l+1):
-                c_lmlpmp_camb[l * (l+1)  + m, l * (l+1) + m] = c_l_camb[l]
             
         fig = plt.figure()
         A_ssp_abs = np.where(np.abs(A_ssp) < 1e-4, 1e-4, np.abs(A_ssp))
@@ -474,6 +434,16 @@ class Topology:
         a_t = np.sqrt(np.sum(np.abs(A_ssp)**2))
         print('arthur statistics:', a_t)
         return np.real(t), np.real(a_t)
+
+    def sampled_kosowski_statistics(self, N_s = 400, num_times=1):
+        print('Sampling Kosowski statistics')
+
+        kosowski_list = np.zeros(num_times)
+        for i in tqdm(range(num_times)):
+            kosowski_list[i] = self.get_kosowski_stat_top(N_s)
+            print(kosowski_list[i])
+
+        return kosowski_list
 
     def make_realization_c_lmlpmp_cholesky(self):
         # THIS CODE SEEMS TO BE BUGGY!
@@ -557,37 +527,51 @@ class Topology:
             print('The spherical harmonics array is', round(getsizeof(sph_harm_no_phase) / 1024 / 1024,2), 'MB \n')
             return sph_harm_no_phase
 
-    def do_cov_sub_plot(self, ax, normalize, ax_index, c_lmlpmp, ell_range, ell_p_range):
-        
-        C_TT_order = c_lmlpmp
-
+    def do_cov_sub_plot(self, ax, normalize, ax_index, C_TT_order, ell_range, ell_p_range):
         if normalize:
-            C_TT_order = normalize_c_lmlpmp(C_TT_order, self.l_max, self.powers[:, 0])
+            C_TT_order = normalize_c_lmlpmp(C_TT_order, self.powers[:, 0], l_min=ell_range[0], l_max =ell_range[1], lp_min=ell_p_range[0], lp_max=ell_p_range[1])
         
+        l_min = ell_range[0]
+        l_max = ell_range[1]
+        lp_min = ell_p_range[0]
+        lp_max = ell_p_range[1]
+        C_TT_order = np.where(np.abs(C_TT_order) < 1e-12, 1e-12, np.abs(C_TT_order))
 
-        C_TT_order = np.where(np.abs(C_TT_order) < 1e-6, 1e-6, C_TT_order)
+        ell_to_s_map = np.array([l * (l+1) - l - l_min**2  for l in range(l_min, l_max+1)])
+        ellp_to_s_map = np.array([l * (l+1) - l - lp_min**2  for l in range(lp_min, lp_max+1)])
 
-        ell_to_s_map = np.array([l * (l+1) - l  for l in range(1, self.l_max+1)])
-        ell_labels = np.arange(1, self.l_max+1)
-
-        axim = ax.imshow(np.abs(C_TT_order).T, norm=LogNorm(), origin='lower', interpolation = 'nearest')
+        axim = ax.imshow(C_TT_order.T, cmap='inferno', norm=LogNorm(), origin='lower', interpolation = 'nearest')
         
-        ax.set_xticks(ell_to_s_map[:ell_range[1]])
-        ax.set_yticks(ell_to_s_map[:ell_p_range[1]])
-        ax.set_xticklabels(ell_labels[:ell_range[1]])
-        ax.set_yticklabels(ell_labels[:ell_p_range[1]])
+        if l_max-l_min > 20:
+            jump = np.array([5, 10, 15, 20])-2
+            ax.set_xticks(ell_to_s_map[jump])
+            ax.set_xticklabels(np.arange(l_min, l_max+1)[jump])
+        else:
+            ax.set_xticks(ell_to_s_map)
+            ax.set_xticklabels(np.arange(l_min, l_max+1))
 
-        ax.set_xlim([ell_range[0]*(ell_range[0]+1)-ell_range[0], (ell_range[1]+1)*(ell_range[1]+2) - (ell_range[1]+1)])
-        ax.set_ylim([ell_p_range[0]*(ell_p_range[0]+1) - ell_p_range[0], (ell_p_range[1]+1)*(ell_p_range[1]+2) - (ell_p_range[1]+1)])
+        if lp_max-lp_min > 20:
+            jump = np.array([5, 10, 15, 20])-2
+            ax.set_yticks(ellp_to_s_map[jump])
+            ax.set_yticklabels(np.arange(lp_min, lp_max+1)[jump])
+        else:
+            ax.set_yticks(ellp_to_s_map)
+            ax.set_yticklabels(np.arange(lp_min, lp_max+1))
+
+        ax.set_xlim([0, (l_max+1)*(l_max+2) - (l_max+1) - l_min**2 - 1])
+        ax.set_ylim([0, (lp_max+1)*(lp_max+2) - (lp_max+1) - lp_min**2 - 1])
         
-        ax.set_title(str(ax_index+1), weight='bold', fontsize='20')
+        if lp_max > 50 or l_max > 50:
+            ax.set_title(str(ax_index+5), weight='bold', fontsize='20')
+        else:
+            ax.set_title(str(ax_index+1), weight='bold', fontsize='20')
         
         if ax_index == 3 or ax_index == 2:
             ax.set_xlabel(r'$\ell$')
         if ax_index == 0 or ax_index == 2:  
             ax.set_ylabel(r"$\ell'$")
         if normalize:
-            axim.set_clim(1e-6, 1e0)
+            axim.set_clim(1e-8, 1e0)
         else:
             axim.set_clim(1e-5, 1e2)
         return axim

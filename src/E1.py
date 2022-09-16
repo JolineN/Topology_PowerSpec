@@ -78,23 +78,59 @@ class E1(Topology):
     #os.environ['OMP_NUM_THREADS'] = str(ncpus)
 
     with ProgressBar(total=self.k_amp.size) as progress:
-      c_lmlpmp = get_c_lmlpmp(
-        V=self.V,
-        k_amp=self.k_amp,
-        phi=self.phi,
-        theta_unique_index=self.theta_unique_index,
-        k_amp_unique_index=self.k_amp_unique_index,
-        k_max_list = self.k_max_list[0, :],
-        l_max=self.l_max,
-        lm_index = self.lm_index,
-        sph_harm_no_phase = self.sph_harm_no_phase,
-        integrand=self.integrand_TT,
-        ell_range = ell_range,
-        ell_p_range = ell_p_range,
-        cubic = self.cubic,
-        progress = progress
-      )
+      if ell_p_range.size == 0:
+        print('Only calculating diagonal')
+        c_lmlpmp = get_c_lmlpmp_diag(
+          V=self.V,
+          k_amp=self.k_amp,
+          theta_unique_index=self.theta_unique_index,
+          k_amp_unique_index=self.k_amp_unique_index,
+          k_max_list = self.k_max_list[0, :],
+          l_max=self.l_max,
+          lm_index = self.lm_index,
+          sph_harm_no_phase = self.sph_harm_no_phase,
+          integrand=self.integrand_TT,
+          ell_range = ell_range,
+          progress = progress
+        )
+      else:
+        c_lmlpmp = get_c_lmlpmp(
+          V=self.V,
+          k_amp=self.k_amp,
+          phi=self.phi,
+          theta_unique_index=self.theta_unique_index,
+          k_amp_unique_index=self.k_amp_unique_index,
+          k_max_list = self.k_max_list[0, :],
+          l_max=self.l_max,
+          lm_index = self.lm_index,
+          sph_harm_no_phase = self.sph_harm_no_phase,
+          integrand=self.integrand_TT,
+          ell_range = ell_range,
+          ell_p_range = ell_p_range,
+          cubic = self.cubic,
+          progress = progress
+        )
     return c_lmlpmp
+
+  def get_kosowski_stat_top(self, N_s):
+    with ProgressBar(total=self.k_amp.size) as progress:
+      kosowski_stat = sample_kosowski_statistics(
+          N_s = N_s,
+          camb_c_l = self.powers[:, 0],
+          V=self.V,
+          k_amp=self.k_amp,
+          phi=self.phi,
+          theta_unique_index=self.theta_unique_index,
+          k_amp_unique_index=self.k_amp_unique_index,
+          k_max_list = self.k_max_list[0, :],
+          l_max=self.l_max,
+          lm_index = self.lm_index,
+          sph_harm_no_phase = self.sph_harm_no_phase,
+          integrand=self.integrand_TT,
+          cubic = self.cubic,
+          progress = progress
+        )
+    return kosowski_stat
 
 
   def get_list_of_k_phi_theta(self):
@@ -196,7 +232,7 @@ def get_alm_per_process_numba(
 
     return a_lm
 
-@njit(nogil=True, fastmath=True, parallel = False)
+@njit(nogil=True, parallel = False)
 def get_c_lmlpmp(
     V,
     k_amp, 
@@ -220,22 +256,14 @@ def get_c_lmlpmp(
     # Not multiprocessed yet, but implementation would be similar to
     # the a_lm realization procedure
 
-    only_diag = False
-    if ell_p_range.size == 0:
-        print('Only doing diagonal')
-        # Only do diagonal
-        only_diag = True
-
-        #To make Numba compile
-        ell_p_range = np.array([0, 0])
-
-    num_l_m = l_max * (l_max+1) + l_max + 1
-    C_lmlpmp = np.zeros((num_l_m, num_l_m), dtype=np.complex128)
+    num_l_m = ell_range[1] * (ell_range[1] + 1) + ell_range[1] + 1 - ell_range[0]**2     
+    num_l_m_p = ell_p_range[1] * (ell_p_range[1] + 1) + ell_p_range[1] + 1 - ell_p_range[0]**2 
+    C_lmlpmp = np.zeros((num_l_m, num_l_m_p), dtype=np.complex128)    
 
     num_indices = k_amp.size
 
     min_k_amp = np.min(k_amp)
-    for i in range(num_indices):
+    for i in prange(num_indices):
       k_amp_cur = k_amp[i]
       k_unique_index_cur = k_amp_unique_index[i]
       sph_harm_index = theta_unique_index[i]
@@ -248,6 +276,90 @@ def get_c_lmlpmp(
       ipow = 1j**np.arange(4)
 
       for l in range(ell_range[0], ell_range[1]+1):
+        for m in range(-l, l + 1):
+          lm_index_cur = l * (l+1) + m - ell_range[0]**2
+          abs_m = np.abs(m)
+          sph_cur_index = lm_index[l, abs_m]
+
+          sph_harm_lm_conj = sph_harm_no_phase[sph_harm_index, sph_cur_index] * phase_list[abs_m]
+          if m<0:
+            sph_harm_lm_conj = (-1)**m * np.conjugate(sph_harm_lm_conj)
+
+          # Only do l-lp = 0 mod 2. Holds for general torus
+          for l_p in range(l%2 + ell_p_range[0], ell_p_range[1]+1, 2):
+            if k_amp_cur > np.sqrt(k_max_list[l]*k_max_list[l_p]) and k_amp_cur > min_k_amp:
+              continue
+            integrand_il_sphm = integrand[k_unique_index_cur, l, l_p] * ipow[(l-l_p)%4] * sph_harm_lm_conj
+            
+            # Negative m_p are calculated later
+            # Only do m-mp = 0 mod 2
+            if cubic:
+              start_m = m%4
+              m_step = 4
+            else:
+              start_m = m%2
+              m_step = 2
+
+            lm_p_index_cur = l_p * (l_p+1) - ell_p_range[0]**2
+            for m_p in range(start_m, l_p + 1, m_step):
+              #lm_p_index_cur = l_p * (l_p+1) + m_p  - ell_p_range[0]**2
+              sph_p_cur_index = lm_index[l_p, m_p]
+
+              sph_harm_lm_p = sph_harm_no_phase[sph_harm_index, sph_p_cur_index] * np.conjugate(phase_list[m_p])
+
+              C_lmlpmp[lm_index_cur, lm_p_index_cur+m_p] += integrand_il_sphm * sph_harm_lm_p
+
+      progress.update(1)
+    
+
+    # Negative m_p are calculated here using symmetry arguments for general torus
+    for l in range(ell_range[0], ell_range[1]+1):
+        for m in range(-l, l + 1):
+          lm_index_cur = l * (l+1) + m - ell_range[0]**2
+          new_lm_index = l * (l+1) - m - ell_range[0]**2
+
+          for l_p in range(ell_p_range[0], ell_p_range[1]+1):
+              for m_p in range(-l_p, 0):
+                lm_p_index_cur = l_p * (l_p+1) + m_p - ell_p_range[0]**2
+                new_lm_p_index_cur = l_p * (l_p+1) - m_p - ell_p_range[0]**2
+
+                C_lmlpmp[lm_index_cur, lm_p_index_cur] = C_lmlpmp[new_lm_index, new_lm_p_index_cur]
+
+    C_lmlpmp *= 2*pi**2 * (4*pi)**2 / V
+    return C_lmlpmp
+
+@njit(nogil=True, parallel = False)
+def get_c_lmlpmp_diag(
+    V,
+    k_amp,
+    theta_unique_index,
+    k_amp_unique_index,
+    k_max_list, 
+    l_max,
+    lm_index,
+    sph_harm_no_phase,
+    integrand,
+    ell_range,
+    progress
+    ):
+
+    # This calculates only the diagonal of the covariance.
+    # Not multiprocessed yet, but implementation would be similar to
+    # the a_lm realization procedure
+
+    num_l_m = l_max * (l_max+1) + l_max + 1
+
+    C_lmlpmp = np.zeros(num_l_m, dtype=np.complex128)    
+
+    num_indices = k_amp.size
+
+    min_k_amp = np.min(k_amp)
+    for i in prange(num_indices):
+      k_amp_cur = k_amp[i]
+      k_unique_index_cur = k_amp_unique_index[i]
+      sph_harm_index = theta_unique_index[i]
+
+      for l in range(ell_range[0], ell_range[1]+1):
         if k_amp_cur > k_max_list[l] and k_amp_cur > min_k_amp:
             continue
             
@@ -255,47 +367,125 @@ def get_c_lmlpmp(
             lm_index_cur = l * (l+1) + m
             sph_cur_index = lm_index[l, np.abs(m)]
 
-            sph_harm_lm_conj = sph_harm_no_phase[sph_harm_index, sph_cur_index] * phase_list[np.abs(m)]
-            if m<0:
-              sph_harm_lm_conj = (-1)**m * np.conjugate(sph_harm_lm_conj)
+            sph_harm_lm_abs = sph_harm_no_phase[sph_harm_index, sph_cur_index]
 
-            if only_diag:
-                C_lmlpmp[lm_index_cur, lm_index_cur] += integrand[k_unique_index_cur, l, l] * np.abs(sph_harm_lm_conj)**2
-            else:
-                # Only do l-lp = 0 mod 2. Holds for general torus
-                for l_p in range(l%2 + ell_p_range[0], ell_p_range[1]+1, 2):
-                    
-                    integrand_il_sphm = integrand[k_unique_index_cur, l, l_p] * ipow[(l-l_p)%4] * sph_harm_lm_conj
-                    
-                    # Negative m_p are calculated later
-                    # Only do m-mp = 0 mod 2
-                    if cubic:
-                      start_m = m%4
-                      m_step = 4
-                    else:
-                      start_m = m%2
-                      m_step = 2
-                    for m_p in range(start_m, l_p + 1, m_step):
-                        lm_p_index_cur = l_p * (l_p+1) + m_p
-                        sph_p_cur_index = lm_index[l_p, m_p]
-
-                        sph_harm_lm_p = sph_harm_no_phase[sph_harm_index, sph_p_cur_index] * np.conjugate(phase_list[m_p])
-
-                        C_lmlpmp[lm_index_cur, lm_p_index_cur] += integrand_il_sphm * sph_harm_lm_p
+            C_lmlpmp[lm_index_cur] += integrand[k_unique_index_cur, l, l] * np.abs(sph_harm_lm_abs)**2
+            
       progress.update(1)
-    
-    # Negative m_p are calculated here using symmetry arguments for general torus
-    for l in range(ell_range[0], ell_range[1]+1):
-        for m in range(-l, l + 1):
-          lm_index_cur = l * (l+1) + m
-          new_lm_index = l * (l+1) - m
-
-          for l_p in range(ell_p_range[0], ell_p_range[1]+1):
-              for m_p in range(-l_p, 0):
-                lm_p_index_cur = l_p * (l_p+1) + m_p
-                new_lm_p_index_cur = l_p * (l_p+1) - m_p
-
-                C_lmlpmp[lm_index_cur, lm_p_index_cur] = C_lmlpmp[new_lm_index, new_lm_p_index_cur]
 
     C_lmlpmp *= 2*pi**2 * (4*pi)**2 / V
     return C_lmlpmp
+
+  
+@njit(nogil=True, fastmath=True, parallel = False)
+def sample_kosowski_statistics(
+    N_s,
+    camb_c_l,
+    V,
+    k_amp, 
+    phi, 
+    theta_unique_index,
+    k_amp_unique_index,
+    k_max_list, 
+    l_max,
+    lm_index,
+    sph_harm_no_phase,
+    integrand,
+    cubic,
+    progress
+    ):
+
+    # This calculates only the diagonal of the covariance.
+    # Not multiprocessed yet, but implementation would be similar to
+    # the a_lm realization procedure
+
+    num_l_m = l_max * (l_max+1) + l_max + 1
+
+    sampled_m_mp_fixed_ell_ellp = np.zeros((l_max+1, l_max+1, N_s, 2), dtype=np.int_)
+
+    for l in range(2, l_max+1):
+      for l_p in range(2, l_max+1):
+        num_m_m_p = (2*l+1)*(2*l_p+1)
+        if num_m_m_p <= N_s:
+          i = 0
+          for m in range(-l, l+1):
+            for m_p in range(-l_p, l_p+1):
+              sampled_m_mp_fixed_ell_ellp[l, l_p, i, 0] = m
+              sampled_m_mp_fixed_ell_ellp[l, l_p, i, 1] = m_p
+              i += 1
+        else:
+          # Create a random list of m, mp to calculate the element for
+          m_list = np.arange(-l, l+1)
+          sampled_m_mp_fixed_ell_ellp[l, l_p, :, 0] = np.random.choice(m_list, N_s)
+          sampled_m_mp_fixed_ell_ellp[l, l_p, :, 1] = np.random.choice(m_list, N_s)
+
+    C_lmlpmp = np.zeros((l_max+1, l_max+1, N_s), dtype=np.complex128)    
+
+    num_indices = k_amp.size
+    min_k_amp = np.min(k_amp)
+
+    if cubic:
+      m_mp_diff = 4
+    else:
+      m_mp_diff = 2
+
+    for i in range(num_indices):
+      m_list = np.arange(0, l_max+1)
+      phase_list = np.exp(-1j * phi[i] * m_list)
+
+      k_amp_cur = k_amp[i]
+      k_unique_index_cur = k_amp_unique_index[i]
+      sph_harm_index = theta_unique_index[i]
+
+      for l in range(2, l_max+1):
+        if k_amp_cur > k_max_list[l] and k_amp_cur > min_k_amp:
+            continue
+        for l_p in range(2, l_max+1):
+          if k_amp_cur > k_max_list[l_p]:
+            continue
+          num_m_m_p = (2*l+1)*(2*l_p+1)
+
+          for s in range(N_s if num_m_m_p > N_s else num_m_m_p):
+            m = sampled_m_mp_fixed_ell_ellp[l, l_p, s, 0]
+            m_p = sampled_m_mp_fixed_ell_ellp[l, l_p, s, 1]
+            abs_m = np.abs(m)
+            abs_m_p = np.abs(m_p)
+
+            # Only do m - m_p = 0 mod m_mp_diff
+            #if m - m_p % m_mp_diff != 0:
+            #    continue
+
+            # Dont do diagonal
+            if l == l_p and m == m_p:
+              continue
+
+            sph_cur_index = lm_index[l, abs_m]
+            sph_harm_lm_conj = sph_harm_no_phase[sph_harm_index, sph_cur_index] * phase_list[abs_m]
+            if m<0:
+              sph_harm_lm_conj = np.conjugate(sph_harm_lm_conj)
+
+            integrand_il_sphm = integrand[k_unique_index_cur, l, l_p] * sph_harm_lm_conj
+            
+            sph_p_cur_index = lm_index[l_p, abs_m_p]
+            sph_harm_lm_p = sph_harm_no_phase[sph_harm_index, sph_p_cur_index] * np.conjugate(phase_list[abs_m_p])
+            if m_p<0:
+              sph_harm_lm_p = np.conjugate(sph_harm_lm_p)
+
+            C_lmlpmp[l, l_p, s] += integrand_il_sphm * sph_harm_lm_p
+            
+      progress.update(1)
+    C_lmlpmp *= 2*pi**2 * (4*pi)**2 / V
+
+    kosowski_stats = 0
+    for l in range(2, l_max+1):
+        for l_p in range(2, l_max+1):
+          num_m_m_p = (2*l+1)*(2*l_p+1)
+
+          cur = np.sum(C_lmlpmp[l, l_p, :] ** 2) / (camb_c_l[l] * camb_c_l[l_p])
+          if num_m_m_p > N_s:
+            kosowski_stats += cur * num_m_m_p / N_s
+          else:
+            kosowski_stats += cur
+
+
+    return np.real(np.sqrt( kosowski_stats))

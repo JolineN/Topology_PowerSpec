@@ -89,22 +89,39 @@ class E2(Topology):
   
   def get_c_lmlpmp_top(self, ell_range, ell_p_range):
     with ProgressBar(total=self.k_amp.size) as progress:
-      c_lmlpmp = get_c_lmlpmp(
-        V=self.V,
-        k_amp=self.k_amp,
-        phi=self.phi,
-        theta_unique_index=self.theta_unique_index,
-        k_amp_unique_index=self.k_amp_unique_index,
-        k_max_list = self.k_max_list[0, :],
-        l_max=self.l_max,
-        lm_index = self.lm_index,
-        sph_harm_no_phase = self.sph_harm_no_phase,
-        integrand=self.integrand_TT,
-        tilde_xi = self.tilde_xi,
-        ell_range = ell_range,
-        ell_p_range = ell_p_range,
-        progress = progress
-      )
+      if ell_p_range.size == 0:
+        print('Only calculating diagonal')
+        c_lmlpmp = get_c_lmlpmp_diag(
+          V=self.V,
+          k_amp=self.k_amp,
+          theta_unique_index=self.theta_unique_index,
+          k_amp_unique_index=self.k_amp_unique_index,
+          k_max_list = self.k_max_list[0, :],
+          l_max=self.l_max,
+          lm_index = self.lm_index,
+          sph_harm_no_phase = self.sph_harm_no_phase,
+          integrand=self.integrand_TT,
+          tilde_xi = self.tilde_xi,
+          ell_range = ell_range,
+          progress = progress
+        )
+      else:
+        c_lmlpmp = get_c_lmlpmp(
+          V=self.V,
+          k_amp=self.k_amp,
+          phi=self.phi,
+          theta_unique_index=self.theta_unique_index,
+          k_amp_unique_index=self.k_amp_unique_index,
+          k_max_list = self.k_max_list[0, :],
+          l_max=self.l_max,
+          lm_index = self.lm_index,
+          sph_harm_no_phase = self.sph_harm_no_phase,
+          integrand=self.integrand_TT,
+          tilde_xi = self.tilde_xi,
+          ell_range = ell_range,
+          ell_p_range = ell_p_range,
+          progress = progress
+        )
     return c_lmlpmp
 
 @njit(parallel = False)
@@ -255,19 +272,11 @@ def get_c_lmlpmp(
     # then it only finds the diagonal values, l, m = lp, mp
 
     # Not multiprocessed yet, but implementation would be similar to
-    # the a_lm realization procedure
+    # the a_lm realization procedure        
 
-    only_diag = False
-    if ell_p_range.size == 0:
-        print('Only doing diagonal')
-        # Only do diagonal
-        only_diag = True
-        #To make Numba compile
-        ell_p_range = np.array([0, 0], dtype=np.int64)
-        
-
-    num_l_m = l_max * (l_max+1) + l_max + 1
-    C_lmlpmp = np.zeros((num_l_m, num_l_m), dtype=np.complex128)
+    num_l_m = ell_range[1] * (ell_range[1] + 1) + ell_range[1] + 1 - ell_range[0]**2     
+    num_l_m_p = ell_p_range[1] * (ell_p_range[1] + 1) + ell_p_range[1] + 1 - ell_p_range[0]**2 
+    C_lmlpmp = np.zeros((num_l_m, num_l_m_p), dtype=np.complex128)    
 
     num_indices = k_amp.size
     for i in range(num_indices):
@@ -289,7 +298,7 @@ def get_c_lmlpmp(
             continue
 
         for m in range(-l, l + 1):
-            lm_index_cur = l * (l+1) + m
+            lm_index_cur = l * (l+1) + m - ell_range[0]**2
             sph_cur_index = lm_index[l, np.abs(m)]
 
             # Do Y_lm^* first
@@ -299,40 +308,75 @@ def get_c_lmlpmp(
             # Then tilde xi
             xi_lm *= cur_tilde_xi[m%2]
 
-            if only_diag:
-                C_lmlpmp[lm_index_cur, lm_index_cur] += integrand[k_unique_index_cur, l, l] * np.abs(xi_lm)**2
-            else:
-                #for l_p in range(ell_p_range[0], ell_p_range[1]+1):
-                for l_p in range(l%2 + ell_p_range[0], ell_p_range[1]+1, 2):
-                    integrand_il = integrand[k_unique_index_cur, l, l_p] * ipow[(l-l_p)%4]
-                    
-                    for m_p in range(-l_p, l_p + 1):
-                        lm_p_index_cur = l_p * (l_p + 1) + m_p
-                        sph_p_cur_index = lm_index[l_p, np.abs(m_p)]
+            #for l_p in range(ell_p_range[0], ell_p_range[1]+1):
+            for l_p in range(l%2 + ell_p_range[0], ell_p_range[1]+1, 2):
+                integrand_il = integrand[k_unique_index_cur, l, l_p] * ipow[(l-l_p)%4]
+                
+                for m_p in range(-l_p, l_p + 1):
+                    lm_p_index_cur = l_p * (l_p + 1) + m_p - ell_p_range[0]**2
+                    sph_p_cur_index = lm_index[l_p, np.abs(m_p)]
 
-                        Y_lpmp = sph_harm_no_phase[sph_harm_index, sph_p_cur_index] * np.conjugate(phase_list[np.abs(m_p)])
-                        if m_p < 0:
-                          Y_lpmp = (-1)**m_p * np.conjugate(Y_lpmp)
+                    Y_lpmp = sph_harm_no_phase[sph_harm_index, sph_p_cur_index] * np.conjugate(phase_list[np.abs(m_p)])
+                    if m_p < 0:
+                      Y_lpmp = (-1)**m_p * np.conjugate(Y_lpmp)
 
-                        xi_lm_p_conj = np.conjugate(cur_tilde_xi[m_p%2]) * Y_lpmp
+                    xi_lm_p_conj = np.conjugate(cur_tilde_xi[m_p%2]) * Y_lpmp
 
-                        C_lmlpmp[lm_index_cur, lm_p_index_cur] += integrand_il * xi_lm * xi_lm_p_conj
+                    C_lmlpmp[lm_index_cur, lm_p_index_cur] += integrand_il * xi_lm * xi_lm_p_conj
     
       progress.update(1)
-    '''
-    # Negative m_p are calculated here using symmetry arguments for general torus
-    for l in range(ell_range[0], ell_range[1]+1):
+    
+    C_lmlpmp *= 2*pi**2 * (4*pi)**2 / V
+    return C_lmlpmp
+
+@njit(nogil=True, parallel=False, fastmath=True)
+def get_c_lmlpmp_diag(
+    V,
+    k_amp,
+    theta_unique_index,
+    k_amp_unique_index,
+    k_max_list, 
+    l_max,
+    lm_index,
+    sph_harm_no_phase,
+    integrand,
+    tilde_xi,
+    ell_range,
+    progress
+    ):
+
+    # This calculates parts of the covariance. If only_diag==True
+    # then it only finds the diagonal values, l, m = lp, mp
+
+    # Not multiprocessed yet, but implementation would be similar to
+    # the a_lm realization procedure
+
+    num_l_m = l_max * (l_max+1) + l_max + 1
+    C_lmlpmp = np.zeros(num_l_m, dtype=np.complex128)
+
+    num_indices = k_amp.size
+    for i in range(num_indices):
+      k_amp_cur = k_amp[i]
+      k_unique_index_cur = k_amp_unique_index[i]
+      sph_harm_index = theta_unique_index[i]
+      cur_tilde_xi = tilde_xi[i, :]
+
+      for l in range(ell_range[0], ell_range[1]+1):
+        if k_amp_cur > k_max_list[l]:
+            continue
+
         for m in range(-l, l + 1):
-          lm_index_cur = l * (l+1) + m
-          new_lm_index = l * (l+1) - m
+            lm_index_cur = l * (l+1) + m
+            sph_cur_index = lm_index[l, np.abs(m)]
 
-          for l_p in range(ell_p_range[0], ell_p_range[1]+1):
-              for m_p in range(-l_p, 0):
-                lm_p_index_cur = l_p * (l_p+1) + m_p
-                new_lm_p_index_cur = l_p * (l_p+1) - m_p
+            # Do Y_lm^* first
+            xi_lm_abs = sph_harm_no_phase[sph_harm_index, sph_cur_index]
+            # Then tilde xi
+            xi_lm_abs *= cur_tilde_xi[m%2]
 
-                C_lmlpmp[lm_index_cur, lm_p_index_cur] = C_lmlpmp[new_lm_index, new_lm_p_index_cur]'''
-
+            C_lmlpmp[lm_index_cur] += integrand[k_unique_index_cur, l, l] * np.abs(xi_lm_abs)**2
+           
+      progress.update(1)
     
     C_lmlpmp *= 2*pi**2 * (4*pi)**2 / V
     return C_lmlpmp
