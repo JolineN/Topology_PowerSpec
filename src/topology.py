@@ -13,9 +13,12 @@ import time
 import healpy as hp
 from .tools import *
 from sys import getsizeof
+from itertools import product
+from random import sample
 
 class Topology:
-    def __init__(self, param, debug=True):
+    def __init__(self, param, debug=True, make_run_folder = True):
+        print('Running', param)
         self.param = param
         self.topology = param['topology']
         self.l_max = param['l_max']
@@ -25,8 +28,8 @@ class Topology:
 
         self.fig_name = 'l_max_{}'.format(self.l_max)
         self.debug = debug
-
-        if os.path.exists(self.root) == False:
+        self.make_run_folder = make_run_folder
+        if make_run_folder and os.path.exists(self.root) == False:
             print('Making run folder:', self.root)
             os.makedirs(self.root)
             os.makedirs(self.root+'figs/')
@@ -183,7 +186,7 @@ class Topology:
 
         # Do the integration up to k=0.08. This should be fine for ell=<250 and accuracy<=0.99
         print('\nFinding k_max as a function of ell')
-        plt.figure()
+
         for l in tqdm(range(2, l_max+1)):            
             k_list = np.linspace(min(self.k_list), max(self.k_list), 200000)
             integrand = 4*pi * self.pars.scalar_power(k_list) * self.transfer_T_interpolate_k_l_list[l](k_list)**2 / k_list
@@ -200,18 +203,9 @@ class Topology:
             self.k_max_list[0, l] = k_list[index_closest_to_accuracy_target_TT]
             self.k_max_list[1, l] = k_list[index_closest_to_accuracy_target_EE]
 
-            if l == 2 or l == 3 or l == 4 or l == 5:
-                #plt.figure()
-                
-                plt.plot(k_list[:index_closest_to_accuracy_target_TT]*self.Lx/(2*np.pi), (integrand/max(integrand))[:index_closest_to_accuracy_target_TT], label=r'TT $\ell$={}'.format(l), alpha=0.5)
-                
-                plt.scatter(k_list[index_closest_to_accuracy_target_EE], 1)
-            #print(cumulative_c_l_ratio[index_closest_to_accuracy_target], 'for ell =', l, 'k=', self.k_max_list[l])
-        plt.title('Integrand for $C_\ell$')
-        plt.legend()
-        plt.savefig(self.root+'figs/transfer_squared_P_k_k_ell_space_100.pdf')
-        np.save(self.root+'k_max_list.npy', self.k_max_list)
+        if self.make_run_folder: np.save(self.root+'k_max_list.npy', self.k_max_list)
 
+        '''
         plt.figure()
         plt.plot(self.k_max_list[0, :])
         plt.ylabel(r'$k_{max}$')
@@ -222,12 +216,10 @@ class Topology:
         plt.title('Integrand for $C_\ell$')
         plt.plot(k_list[:index_closest_to_accuracy_target_TT]*self.Lx/(2*np.pi), integrand[:index_closest_to_accuracy_target_TT])
         plt.savefig(self.root+'figs/transfer_squared_P_k_k_ell{}.pdf'.format(l))
-
-        print('\n********************************************')
+        '''
         print('Done. k_max for TT ell_max =', self.k_max_list[0, l_max], 'k_max for EE ell_max =', self.k_max_list[1, l_max])
-        print('********************************************\n')
     
-    def calculate_c_lmlpmp(self, only_diag=False, normalize=False, plotting = True, plot_param={}):
+    def calculate_c_lmlpmp(self, only_diag=False, normalize=False, plotting = True, plot_param={}, parallel_cov = True, save_cov=False):
         # Calculaget_c_lmlpmp, the off-diagonal and on-diagonal power spectrum
         l_max = self.l_max
 
@@ -246,16 +238,24 @@ class Topology:
                 ell_range = ell_range,
                 ell_p_range = ell_p_range
             )
+            
             print('Time to calculate C_TT with l_max={} and c_l_ratio={}:'.format(l_max, self.c_l_accuracy), time.time()-time_start, 'seconds with Numba')            
             
             self.C_TT_diag = get_c_l_from_c_lmlpmp(C_TT_lmlpmp, self.l_max)
         elif plotting == False:
             ell_range = np.array([2, self.l_max])
             ell_p_range = np.array([2, self.l_max])
-            C_TT_lmlpmp = self.get_c_lmlpmp_top(
-                ell_range = ell_range,
-                ell_p_range = ell_p_range
-            )
+            if parallel_cov:
+                C_TT_lmlpmp = self.get_c_lmlpmp_multiprocessing(
+                    ell_range = ell_range,
+                    ell_p_range = ell_p_range
+                )
+            else:
+                C_TT_lmlpmp = self.get_c_lmlpmp_top(
+                    ell_range = ell_range,
+                    ell_p_range = ell_p_range
+                )
+            
         else:
             num_plots = plot_param['l_ranges'][:, 0].size
             ell = np.arange(2, self.l_max+1, dtype=np.int32)
@@ -297,23 +297,29 @@ class Topology:
                 # Make sure the l_ranges do not overlap!
                 ell_range = np.array(plot_param['l_ranges'][i, :])
                 ell_p_range = np.array(plot_param['lp_ranges'][i, :])
-                C_TT_lmlpmp = self.get_c_lmlpmp_top(
-                    ell_range = ell_range,
-                    ell_p_range = ell_p_range
-                )
-                if l_max > 30 or lp_max > 30:
-                    normalized_clmlpmp = normalize_c_lmlpmp(
-                        C_TT_lmlpmp, 
-                        self.powers[:, 0], 
-                        l_min=l_min, 
-                        l_max=l_max, 
-                        lp_min = lp_min,
-                        lp_max = lp_max)
+                if parallel_cov:
+                    C_TT_lmlpmp = self.get_c_lmlpmp_multiprocessing(
+                        ell_range = ell_range,
+                        ell_p_range = ell_p_range
+                    )
+                else:
+                    C_TT_lmlpmp = self.get_c_lmlpmp_top(
+                        ell_range = ell_range,
+                        ell_p_range = ell_p_range
+                    )
+                
+                normalized_clmlpmp = normalize_c_lmlpmp(
+                    C_TT_lmlpmp, 
+                    self.powers[:, 0], 
+                    l_min=l_min, 
+                    l_max=l_max, 
+                    lp_min = lp_min,
+                    lp_max = lp_max)
 
-                    np.save(self.root+'corr_matrix_l_{}_{}_lp_{}_{}.npy'.format(
-                        l_min, l_max,
-                        lp_min, lp_max,
-                    ), normalized_clmlpmp)
+                np.save(self.root+'corr_matrix_l_{}_{}_lp_{}_{}.npy'.format(
+                    l_min, l_max,
+                    lp_min, lp_max,
+                ), normalized_clmlpmp)
                 
                 im = self.do_cov_sub_plot(ax, normalize, i, C_TT_lmlpmp, ell_range, ell_p_range)
                 
@@ -325,7 +331,16 @@ class Topology:
             plt.savefig(
                 self.root+'figs/c_tt_offdiagonal_{}.pdf'.format('high_ell' if ell_range[1]>50 or ell_p_range[1]> 50 else 'low_ell'),
                 bbox_inches='tight')
-        return C_TT_lmlpmp
+        if save_cov == True and num_plots == 1:
+            return C_TT_lmlpmp, normalize_c_lmlpmp(
+                        C_TT_lmlpmp, 
+                        self.powers[:, 0], 
+                        l_min=l_min, 
+                        l_max=l_max, 
+                        lp_min = lp_min,
+                        lp_max = lp_max)
+        else:
+            return C_TT_lmlpmp
 
     def make_alm_realizations(self, plot_alm=True, save_alm = False, it=2):
         # Make it number of alm realizations. These can be saved in .npy files
@@ -391,59 +406,73 @@ class Topology:
 
         np.save(self.root+'realizations/realizations_L_infty_lmax_{}_num_{}.npy'.format(l_max, it), alm_list)
 
-    def calculate_exact_kl_divergence(self):
+    def calculate_exact_kl_divergence(self, parallel_cov=True):
         print('Calculating KL divergence')
 
-        c_lmlpmp_ordered = self.calculate_c_lmlpmp(only_diag=False, normalize=False, plotting = False)
+        c_lmlpmp_ordered = self.calculate_c_lmlpmp(only_diag=False, normalize=False, plotting = False, parallel_cov = parallel_cov)
+
         A_ssp = normalize_c_lmlpmp(c_lmlpmp_ordered, self.powers[:, 0], cl_accuracy = self.c_l_accuracy, l_min=2, lp_min=2, l_max=self.l_max, lp_max=self.l_max)
 
         w, _ = np.linalg.eig(A_ssp)
-        t = 0
+        kl = 0
         for eig in w:
-            t += (np.log(np.abs(eig)) + 1/eig - 1)/2
-            
-        fig = plt.figure()
-        A_ssp_abs = np.where(np.abs(A_ssp) < 1e-4, 1e-4, np.abs(A_ssp))
-        im = plt.imshow(A_ssp_abs.T, norm=LogNorm(), origin='lower')
-        
-        cbar_ax = fig.add_axes([0.8, 0.05, 0.05, 0.85])
-        fig.colorbar(im, cax=cbar_ax)
-        
-        plt.savefig(self.root+'tmp_ani.pdf')
+            kl += (np.log(np.abs(eig)) + 1/eig - 1)/2
 
-        (_, logdet_norm) = np.linalg.slogdet(A_ssp)
-        logdet_norm = np.abs(logdet_norm)
-
-        res = np.sum(np.abs(1/np.diag(A_ssp)))
-
-        tot = logdet_norm / 2  + res / 2 - self.l_max * (self.l_max+2)/2 + 3/2
-        print('tot, det, res, leftovers', tot, logdet_norm/2, res/2, - self.l_max * (self.l_max+2)/2 + 3/2)
-        print('old way vs new way', tot, t)
+        #(_, logdet_norm) = np.linalg.slogdet(A_ssp)
+        #logdet_norm = np.abs(logdet_norm)
+        #res = np.sum(np.abs(1/np.diag(A_ssp)))
+        #tot = logdet_norm / 2  + res / 2 - self.l_max * (self.l_max+2)/2 + 3/2
+        #print('tot, det, res, leftovers', tot, logdet_norm/2, res/2, - self.l_max * (self.l_max+2)/2 + 3/2)
+        #print('old way vs new way', tot, t)
 
         np.fill_diagonal(A_ssp, 0)
-
-        fig = plt.figure()
-        A_ssp_abs = np.where(np.abs(A_ssp) < 1e-4, 1e-4, np.abs(A_ssp))
-        im = plt.imshow(A_ssp_abs.T, norm=LogNorm(), origin='lower')
         
-        cbar_ax = fig.add_axes([0.8, 0.05, 0.05, 0.85])
-        fig.colorbar(im, cax=cbar_ax)
-        
-        plt.savefig(self.root+'tmp_ani_no_diag.pdf')
-
         a_t = np.sqrt(np.sum(np.abs(A_ssp)**2))
-        print('arthur statistics:', a_t)
-        return np.real(t), np.real(a_t)
 
-    def sampled_kosowski_statistics(self, N_s = 400, num_times=1):
-        print('Sampling Kosowski statistics')
+        return np.real(kl), np.real(a_t)
 
-        kosowski_list = np.zeros(num_times)
-        for i in tqdm(range(num_times)):
-            kosowski_list[i] = self.get_kosowski_stat_top(N_s)
-            print(kosowski_list[i])
+    def sampled_kosowsky_statistics(self, N_s = 400, num_times=1):
+        print('Sampling kosowsky statistics')
+        l_max = self.l_max
 
-        return kosowski_list
+        kosowsky_list = np.zeros(num_times)
+        
+        for j in tqdm(range(num_times)):
+            sampled_m_mp_fixed_ell_ellp = np.zeros((l_max+1, l_max+1, N_s, 2), dtype=np.int_)
+            for l in range(2, l_max+1):
+                for l_p in range(2, l_max+1):
+                    num_m_m_p = (2*l+1)*(2*l_p+1)
+                    if num_m_m_p <= N_s:
+                        i = 0
+                        for m in range(-l, l+1):
+                            for m_p in range(-l_p, l_p+1):
+                                sampled_m_mp_fixed_ell_ellp[l, l_p, i, 0] = m
+                                sampled_m_mp_fixed_ell_ellp[l, l_p, i, 1] = m_p
+                                i += 1
+                    else:
+                        # Create a random list of m, mp to calculate the element for
+                        m_list = np.arange(-l, l+1)
+                        m_p_list = np.arange(-l_p, l_p+1)
+                        sampled_m_mp_fixed_ell_ellp[l, l_p, :, :] = np.array(sample(list(product(m_list, m_p_list)), k=N_s))
+                        #sampled_m_mp_fixed_ell_ellp[l, l_p, :, 0] = np.random.choice(m_list, N_s)
+                        #sampled_m_mp_fixed_ell_ellp[l, l_p, :, 1] = np.random.choice(m_p_list, N_s)
+            C_lmlpmp = self.get_kosowsky_stat_multiprocessing(N_s, sampled_m_mp_fixed_ell_ellp)
+
+            kosowsky_stats = 0
+            for l in range(2, l_max+1):
+                for l_p in range(2, l_max+1):
+                    num_m_m_p = (2*l+1)*(2*l_p+1)
+
+                    cur = np.sum(np.abs(C_lmlpmp[l, l_p, :num_m_m_p]) ** 2 / (self.powers[l, 0] * self.powers[l_p, 0] * self.c_l_accuracy**2))
+                    if num_m_m_p > N_s:
+                        kosowsky_stats += cur * num_m_m_p / N_s
+                    else:
+                        kosowsky_stats += cur
+
+            kosowsky_list[j] = np.real(np.sqrt(kosowsky_stats))
+            print(kosowsky_list[j])
+
+        return kosowsky_list
 
     def make_realization_c_lmlpmp_cholesky(self):
         # THIS CODE SEEMS TO BE BUGGY!
@@ -478,13 +507,14 @@ class Topology:
         D_l_cv = get_D_l(sqrt(cosmic_variance))
 
         plt.figure()
-        plt.plot(ell, get_D_l(self.C_TT_diag)[l_min:self.l_max+1], linewidth=4, label='Lx={} True C_l'.format(int(self.Lx)))
-        plt.plot(ell, correct_D_l[l_min:self.l_max+1], linewidth=4, label='CAMB')
+        plt.plot(ell, get_D_l(self.C_TT_diag)[l_min:self.l_max+1], linewidth=4, label=r'Anisotropic $C_\ell$')
+        plt.plot(ell, correct_D_l[l_min:self.l_max+1], linewidth=4, label=r'CAMB $C_\ell$')
 
         plt.fill_between(ell, (correct_D_l - D_l_cv)[l_min:], (correct_D_l + D_l_cv)[l_min:], color='grey', alpha=0.5)
 
-        for i in range(2):
-            plt.plot(ell, get_D_l(c_l_a[:, i])[l_min:self.l_max+1], label='Realization {}'.format(i), alpha=0.3)
+        if c_l_a is not None:
+            for i in range(2):
+                plt.plot(ell, get_D_l(c_l_a[:, i])[l_min:self.l_max+1], label='Realization {}'.format(i), alpha=0.3)
 
         plt.legend()
         plt.ylabel(r'$\ell (\ell+1)C^{TT}_\ell / 2\pi \, [\mu K^2]$')
@@ -506,14 +536,13 @@ class Topology:
         with multiprocessing.Pool(processes=ncpus) as pool:
             transfer_T_delta_kl = np.array(pool.starmap(transfer_parallel, tqdm(args, total=num_k_amp_unique)))
             print('Size of transfer function: {} MB.'.format(round(getsizeof(transfer_delta_kl) / 1024 / 1024,2)), '\n')
-            return transfer_T_delta_kl
+            pool.close()
+        return transfer_T_delta_kl
 
     def get_sph_harm(self):
         # Get all the spherical harmonics without phase (phi=0)
         # We use multiprocessing to make this fast
-        num_k_indices = self.k_amp.size
         num_l_m = int((self.l_max + 1)*(self.l_max + 2)/2)
-        theta = self.theta
 
         # We only find Y_lm for unique theta elements. We don't want to recalculate Y_lm unnecessarily
         unique_theta_length = self.theta_unique.size
@@ -525,7 +554,8 @@ class Topology:
         with multiprocessing.Pool(processes=ncpus) as pool:
             sph_harm_no_phase = np.array(pool.starmap(get_sph_harm_parallel, tqdm(args, total=unique_theta_length)), dtype=np.float32)
             print('The spherical harmonics array is', round(getsizeof(sph_harm_no_phase) / 1024 / 1024,2), 'MB \n')
-            return sph_harm_no_phase
+            pool.close()
+        return sph_harm_no_phase
 
     def do_cov_sub_plot(self, ax, normalize, ax_index, C_TT_order, ell_range, ell_p_range):
         if normalize:
@@ -648,3 +678,92 @@ class Topology:
         # Get corresponding observed c_l (sigma_l?)
         c_l = get_c_l_from_a_lm(a_lm, l_max)
         return a_lm, c_l
+
+    def get_c_lmlpmp_multiprocessing(self, ell_range, ell_p_range):
+        l_max = self.l_max
+        num_indices = self.k_amp.size
+
+        ncpus = multiprocessing.cpu_count()
+        index_thread_split = np.arange(0, num_indices, int(np.ceil(num_indices/ncpus)))
+        size = index_thread_split.size
+        
+        os.environ['OMP_NUM_THREADS'] = '1'
+        
+        index_thread_split = np.append(index_thread_split, num_indices)
+        manager = multiprocessing.Manager()
+        return_dict = manager.dict()
+        jobs = []
+        for i in range(size):
+            # Spawn a process for each cpu that goes through parts of the summation each
+            min_index_list = index_thread_split[i]
+            max_index_list = index_thread_split[i+1]
+
+            args = (
+                i,
+                return_dict,
+                min_index_list,
+                max_index_list,
+                self.V,
+                self.k_amp, 
+                self.phi, 
+                self.theta_unique_index,
+                self.k_amp_unique_index,
+                self.k_max_list[0, :],
+                l_max,
+                self.lm_index,
+                self.sph_harm_no_phase,
+                self.integrand_TT,
+                ell_range,
+                ell_p_range
+            )
+            p = multiprocessing.Process(target=self.get_c_lmlpmp_per_process, args=args)
+            jobs.append(p)
+            p.start()
+
+        for proc in jobs:
+            proc.join()
+            proc.close()
+
+        # The final a_lm that is the sum of contribution from each process    
+        c_lmlpmp = sum(return_dict.values())
+
+        return c_lmlpmp
+    
+    def get_kosowsky_stat_multiprocessing(self, N_s, sampled_m_mp_fixed_ell_ellp):
+        num_indices = self.k_amp.size
+
+        ncpus = multiprocessing.cpu_count()
+        index_thread_split = np.arange(0, num_indices, int(np.ceil(num_indices/ncpus)))
+        size = index_thread_split.size
+        
+        os.environ['OMP_NUM_THREADS'] = '1'
+        
+        index_thread_split = np.append(index_thread_split, num_indices)
+        manager = multiprocessing.Manager()
+        return_dict = manager.dict()
+        jobs = []
+        for i in range(size):
+            # Spawn a process for each cpu that goes through parts of the summation each
+            min_index_list = index_thread_split[i]
+            max_index_list = index_thread_split[i+1]
+
+            args = (
+                N_s,
+                sampled_m_mp_fixed_ell_ellp,
+                i,
+                return_dict,
+                min_index_list,
+                max_index_list,
+            )
+            p = multiprocessing.Process(target=self.get_kosowsky_per_process, args=args)
+            jobs.append(p)
+            p.start()
+
+        for proc in jobs:
+            proc.join()
+            proc.close()
+
+        # The final c_lmlpmp that is the sum of contribution from each process    
+        c_lmlpmp = sum(return_dict.values())
+
+        return c_lmlpmp

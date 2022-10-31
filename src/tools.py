@@ -159,7 +159,7 @@ def do_integrand_pre_processing(unique_k_amp, scalar_pk_k3, transfer_delta_kl, l
 
 @njit
 def normalize_c_lmlpmp(c_lmlpmp, camb_c_l, l_min, l_max, lp_min, lp_max, cl_accuracy=1):
-    normalized_c_lmlpmp = np.zeros((c_lmlpmp.shape), dtype=np.complex128)
+    normalized_c_lmlpmp = np.zeros(c_lmlpmp.shape, dtype=np.complex128)
     for l in range(l_min, l_max+1):
         for m in range(-l, l+1):
             index = l * (l+1) + m - l_min**2
