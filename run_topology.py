@@ -21,7 +21,7 @@ param['Lz'] = 1.1
 param['beta'] = 90.0
 param['alpha'] = 90.0
 param['gamma'] = 0.0
-param['l_max'] = 30
+param['l_max'] = 100
 param['x0'] = np.array([0, 0, 0], dtype=np.float64)
 
 if param['topology'] == 'E1':
