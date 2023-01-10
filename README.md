@@ -11,4 +11,4 @@ First the code does a substaintial amount of pre-processing. It creates the nece
 
 It should be possible to make this faster. Even though I use a substantial amount of parallelization, it does not seem like I am able to utilize all cpu power, so I will need to look into this later.
 
-The code supports E1 and E2 with tilts and can be non-cubic.
+The code supports E1, E2 and E3 with tilts and can be non-cubic. E4, E5 and E6 are not yet fully ready.
