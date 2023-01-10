@@ -1,5 +1,6 @@
 from .topology import Topology
 from .tools import *
+from .tools_E2_E3_E4_E5 import *
 import numpy as np
 from numpy import pi, sin, cos, exp, sqrt, tan
 from numba import njit, prange
@@ -57,7 +58,7 @@ class E4(Topology):
   ):
     # This function seems unnecessary, but Numba does not allow return_dict
     # which is of type multiprocessing.Manager
-    return_dict[process_i] = get_alm_per_process_numba(
+    return_dict[process_i] = E2_E3_E4_E5_get_alm_per_process_numba(
         min_index,
         max_index,
         k_amp,
@@ -71,6 +72,7 @@ class E4(Topology):
         delta_k_n,
         transfer_delta_kl,
         tilde_xi = self.tilde_xi,
+        tilde_xi_delta_m = 3
     )
 
   def get_c_lmlpmp_per_process(
@@ -95,12 +97,13 @@ class E4(Topology):
     # This function seems unnecessary, but Numba does not allow return_dict
     # which is of type multiprocessing.Manager
 
-    return_dict[process_i] = get_c_lmlpmp(
+    return_dict[process_i] = E2_E3_E4_E5_get_c_lmlpmp(
         min_index,
         max_index,
         V,
         k_amp, 
         phi, 
+        self.theta,
         theta_unique_index,
         k_amp_unique_index,
         k_max_list, 
@@ -111,7 +114,7 @@ class E4(Topology):
         ell_range,
         ell_p_range,
         tilde_xi = self.tilde_xi,
-        no_shift = self.no_shift,
+        tilde_xi_delta_m = 3,
         progress = None
     )
 
@@ -122,8 +125,8 @@ class E4(Topology):
         [0,          0,         1]
       ], dtype=np.float64)
     M_B_j = np.zeros((3, 3, 3), dtype=np.float64)
-    for i in range(3):
-      M_B_j[i, :, :] = np.linalg.matrix_power(M_B_1, i)
+    for j in range(3):
+      M_B_j[j, :, :] = np.linalg.matrix_power(M_B_1, j)
     
     M_B_j_minus_identity = M_B_j - np.identity(3)
 
@@ -162,7 +165,7 @@ class E4(Topology):
     with ProgressBar(total=self.k_amp.size) as progress:
       if ell_p_range.size == 0:
         print('Only calculating diagonal')
-        c_lmlpmp = get_c_lmlpmp_diag(
+        c_lmlpmp = E2_E3_E4_E5_get_c_lmlpmp_diag(
           V=self.V,
           k_amp=self.k_amp,
           theta_unique_index=self.theta_unique_index,
@@ -174,26 +177,7 @@ class E4(Topology):
           integrand=self.integrand_TT,
           ell_range = ell_range,
           tilde_xi = self.tilde_xi,
-          progress = progress
-        )
-      else:
-        c_lmlpmp = get_c_lmlpmp(
-          min_index = 0,
-          max_index = self.k_amp.size,
-          V=self.V,
-          k_amp=self.k_amp,
-          phi=self.phi,
-          theta_unique_index=self.theta_unique_index,
-          k_amp_unique_index=self.k_amp_unique_index,
-          k_max_list = self.k_max_list[0, :],
-          l_max=self.l_max,
-          lm_index = self.lm_index,
-          sph_harm_no_phase = self.sph_harm_no_phase,
-          integrand=self.integrand_TT,
-          ell_range = ell_range,
-          ell_p_range = ell_p_range,
-          tilde_xi = self.tilde_xi,
-          no_shift = self.no_shift,
+          tilde_xi_delta_m = 3,
           progress = progress
         )
     return c_lmlpmp
@@ -205,7 +189,7 @@ def get_list_of_k_phi_theta(k_max, L_12, L_z, x0, beta, M_B_j_minus_identity, M_
     sin_b_inv = 1/sin(beta)
 
     n_x_max = int(np.ceil(k_max * L_12 / (2*pi)))
-    n_y_max = int(np.ceil(k_max * L_12 / (2*pi)))
+    n_y_max = 4*int(np.ceil(k_max * L_12 / (2*pi)))
     n_z_max = int(np.ceil(k_max * L_z * 3 / (2*pi))) # Because of eigenmode 1
  
     k_amp = np.zeros(n_x_max * n_y_max * n_z_max * 8)
@@ -221,11 +205,11 @@ def get_list_of_k_phi_theta(k_max, L_12, L_z, x0, beta, M_B_j_minus_identity, M_
     # Eigenmode 1
     k_x = 0
     k_y = 0
-    # Only n_z = 0 mod 4
+    # Only n_z = 0 mod 3
     for n_z in range(-n_z_max, n_z_max+1):
       if n_z % 3 != 0 or n_z == 0:
         continue
-      k_z = 2*pi * n_z * sin_b_inv / (3 * L_z)
+      k_z = 2*pi * n_z * sin_b_inv / (3 * L_z * sin(beta))
       k_xyz = sqrt(k_z**2)
       if k_xyz > k_max:
         continue
@@ -241,6 +225,7 @@ def get_list_of_k_phi_theta(k_max, L_12, L_z, x0, beta, M_B_j_minus_identity, M_
     for n_x in range(0, n_x_max+1):
       k_x = 2*pi * n_x / L_12
       for n_y in range(1, n_y_max+1):
+
         k_y = 4*pi * n_y / (sqrt(3)*L_12) + k_x/np.sqrt(3)
 
         k_xy_squared = k_x**2 + k_y**2
@@ -248,7 +233,7 @@ def get_list_of_k_phi_theta(k_max, L_12, L_z, x0, beta, M_B_j_minus_identity, M_
           continue
         
         for n_z in range(-n_z_max, n_z_max+1):
-          k_z = 2*pi * n_z * sin_b_inv / (3*L_z)
+          k_z = 2*pi * n_z * sin_b_inv / (3*L_z * sin(beta))
           
           k_xyz = sqrt(k_xy_squared + k_z**2)
 
@@ -266,7 +251,7 @@ def get_list_of_k_phi_theta(k_max, L_12, L_z, x0, beta, M_B_j_minus_identity, M_
           for k in range(3):
             j_contribution[k] = exp(-1j*np.dot(k_vec, np.dot(M_B_j_minus_identity[k], x0))) * exp(1j*np.dot(k_vec, np.dot(M_0j[k], T_B)))
           for m_mod_3 in range(3):
-            tilde_xi[cur_index, m_mod_3] += np.sum(exp(1j * m_mod_3 * np.arange(3) * 2*np.pi/3) * j_contribution)
+            tilde_xi[cur_index, m_mod_3] = np.sum(exp(1j * m_mod_3 * np.arange(3) * 2*np.pi/3) * j_contribution)
           tilde_xi[cur_index, :] *= exp(- 1j * np.dot(k_vec, x0))/sqrt(3) 
           
           cur_index += 1
@@ -277,134 +262,6 @@ def get_list_of_k_phi_theta(k_max, L_12, L_z, x0, beta, M_B_j_minus_identity, M_
 
     print('Final num of elements:', k_amp.size, 'Minimum k_amp', np.amin(k_amp), 'n_x_max', n_x_max, 'n_z_max', n_z_max)
     return k_amp, phi, theta, tilde_xi
-
-@njit(fastmath=True)
-def get_alm_per_process_numba(
-    min_index,
-    max_index,
-    k_amp,
-    phi,
-    k_amp_unique_index,
-    theta_unique_index,
-    k_max_list,
-    l_max,
-    lm_index,
-    sph_harm_no_phase,
-    delta_k_n,
-    transfer_delta_kl,
-    tilde_xi
-): 
-    # This function returns parts of the summation over wavenumber k to get a_lm
-    num_l_m = int((l_max + 1)*(l_max + 2)/2)
-    a_lm = np.zeros(num_l_m, dtype=np.complex128)
-    for i in range(min_index, max_index):
-      k_amp_cur = k_amp[i]
-      k_unique_index_cur = k_amp_unique_index[i]
-      sph_harm_index = theta_unique_index[i]
-      m_list = np.arange(0, l_max+1)
-      phase_list = np.exp(-1j * phi[i] * m_list)
-
-      random_delta_k_n = np.random.normal(loc=0, scale = delta_k_n[k_unique_index_cur])
-      uniform = np.random.uniform(0.0, np.pi*2)
-      random_delta_k_n *= np.exp(1j * uniform)
-
-      cur_tilde_xi = tilde_xi[i, :]
-
-      for l in range(2, l_max+1):
-          if k_amp_cur > k_max_list[l]:
-              continue
-          delta_k_n_mul_transfer = random_delta_k_n * transfer_delta_kl[k_unique_index_cur, l]
-          for m in range(l+1):
-              lm_index_cur = lm_index[l, m]
-              
-              sph_harm_conj = phase_list[m] * sph_harm_no_phase[sph_harm_index, lm_index_cur]
-
-              a_lm[lm_index_cur] += delta_k_n_mul_transfer * sph_harm_conj * cur_tilde_xi[m%3]
-
-    return a_lm
-
-@njit(nogil=True, parallel=False, fastmath=True)
-def get_c_lmlpmp(
-    min_index,
-    max_index,
-    V,
-    k_amp, 
-    phi, 
-    theta_unique_index,
-    k_amp_unique_index,
-    k_max_list, 
-    l_max,
-    lm_index,
-    sph_harm_no_phase,
-    integrand,
-    ell_range,
-    ell_p_range,
-    tilde_xi,
-    no_shift,
-    progress
-    ):
-
-    # This calculates parts of the covariance. If only_diag==True
-    # then it only finds the diagonal values, l, m = lp, mp
-
-    # Not multiprocessed yet, but implementation would be similar to
-    # the a_lm realization procedure        
-
-    num_l_m = ell_range[1] * (ell_range[1] + 1) + ell_range[1] + 1 - ell_range[0]**2     
-    num_l_m_p = ell_p_range[1] * (ell_p_range[1] + 1) + ell_p_range[1] + 1 - ell_p_range[0]**2 
-    C_lmlpmp = np.zeros((num_l_m, num_l_m_p), dtype=np.complex128)    
-
-    for i in range(min_index, max_index):
-      k_amp_cur = k_amp[i]
-      k_unique_index_cur = k_amp_unique_index[i]
-      sph_harm_index = theta_unique_index[i]
-
-      m_list = np.arange(0, l_max+1)
-      phase_list = np.exp(-1j * phi[i] * m_list)
-
-      cur_tilde_xi = tilde_xi[i, :]
-
-      # Powers of i so we can get them as an array call instead of recalculating them every time.
-      # 1j**n == ipow[n%4], even for n<0.
-      ipow = 1j**np.arange(4)
-
-      for l in range(ell_range[0], ell_range[1]+1):
-        start_lp = 0#l%2 if no_shift else 0
-        lp_step = 1# if no_shift else 1
-        for m in range(-l, l + 1):
-            lm_index_cur = l * (l+1) + m - ell_range[0]**2
-            sph_cur_index = lm_index[l, np.abs(m)]
-
-            # Do Y_lm^* first
-            xi_lm = sph_harm_no_phase[sph_harm_index, sph_cur_index] * phase_list[np.abs(m)]
-            if m < 0:
-              xi_lm = (-1)**m * np.conjugate(xi_lm)
-            # Then tilde xi
-            xi_lm *= cur_tilde_xi[m%3]
-
-            
-            #for l_p in range(ell_p_range[0], ell_p_range[1]+1):
-            for l_p in range(start_lp + ell_p_range[0], ell_p_range[1]+1, lp_step):
-              if k_amp_cur > np.sqrt(k_max_list[l]*k_max_list[l_p]):
-                continue
-              integrand_il = integrand[k_unique_index_cur, l, l_p] * ipow[(l-l_p)%4]
-              
-              for m_p in range(-l_p, l_p + 1):
-                  lm_p_index_cur = l_p * (l_p + 1) + m_p - ell_p_range[0]**2
-                  sph_p_cur_index = lm_index[l_p, np.abs(m_p)]
-
-                  Y_lpmp = sph_harm_no_phase[sph_harm_index, sph_p_cur_index] * np.conjugate(phase_list[np.abs(m_p)])
-                  if m_p < 0:
-                    Y_lpmp = (-1)**m_p * np.conjugate(Y_lpmp)
-
-                  xi_lm_p_conj = np.conjugate(cur_tilde_xi[m_p%3]) * Y_lpmp
-
-                  C_lmlpmp[lm_index_cur, lm_p_index_cur] += integrand_il * xi_lm * xi_lm_p_conj
-    
-      if progress != None: progress.update(1)
-    
-    C_lmlpmp *= 2*pi**2 * (4*pi)**2 / V
-    return C_lmlpmp
 
 @njit(nogil=True, parallel=False, fastmath=True)
 def get_c_lmlpmp_diag(

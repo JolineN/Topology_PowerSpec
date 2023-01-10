@@ -4,8 +4,6 @@ import numpy as np
 from numpy import pi, sin, tan, sqrt
 from numba import njit, prange
 from numba_progress import ProgressBar
-import multiprocessing
-import os
 
 class E1(Topology):
   def __init__(self, param, debug=True, make_run_folder = False):
@@ -185,27 +183,6 @@ class E1(Topology):
           progress = progress
         )
     return c_lmlpmp
-
-  '''def get_kosowsky_stat_top(self, N_s):
-    with ProgressBar(total=self.k_amp.size) as progress:
-      kosowsky_stat = sample_kosowsky_statistics(
-          N_s = N_s,
-          camb_c_l = self.powers[:, 0],
-          V=self.V,
-          k_amp=self.k_amp,
-          phi=self.phi,
-          theta_unique_index=self.theta_unique_index,
-          k_amp_unique_index=self.k_amp_unique_index,
-          k_max_list = self.k_max_list[0, :],
-          l_max=self.l_max,
-          lm_index = self.lm_index,
-          sph_harm_no_phase = self.sph_harm_no_phase,
-          integrand=self.integrand_TT,
-          cubic = self.cubic,
-          progress = progress
-        )
-    return kosowsky_stat'''
-
 
   def get_list_of_k_phi_theta(self):
     return get_list_of_k_phi_theta(max(self.k_max_list[0, :]), self.Lx, self.Ly, self.Lz, self.beta, self.alpha)
@@ -493,10 +470,13 @@ def sample_kosowsky_statistics(
       sph_harm_index = theta_unique_index[i]
 
       for l in range(2, l_max+1):
-        for l_p in range(l%2 + 2, l_max+1, 2):
+        for l_p in range(l, l_max+1, 2):
           if k_amp_cur > np.sqrt(k_max_list[l]*k_max_list[l_p]) and k_amp_cur > min_k_amp:
             continue
-          num_m_m_p = (2*l+1)*(2*l_p+1)
+          if l == l_p:
+            num_m_m_p = (2*l+1)*l
+          else:
+            num_m_m_p = (2*l+1)*(2*l_p+1)
 
           for s in range(N_s if num_m_m_p > N_s else num_m_m_p):
             m = sampled_m_mp_fixed_ell_ellp[l, l_p, s, 0]

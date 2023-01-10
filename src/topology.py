@@ -88,12 +88,6 @@ class Topology:
 
         # We have a list of k_max as a function of ell. We need to make sure this is large enough
         self.get_kmax_as_function_of_ell()
-        #if self.is_kmax_high_enough() == False:
-        #    # k_max is not high enough. So we start pre-processing again with a higher k_max for one or more ell
-        #    print('Starting the pre-process again with higher k_max')
-        #    print('\n')
-        #    self.do_pre_processing()
-        #    return
         
         # We find all allowed |k|, phi, theta and put them in big lists
         # The function get_list_of_k_phi_theta is specific to each topology
@@ -205,21 +199,9 @@ class Topology:
 
         if self.make_run_folder: np.save(self.root+'k_max_list.npy', self.k_max_list)
 
-        '''
-        plt.figure()
-        plt.plot(self.k_max_list[0, :])
-        plt.ylabel(r'$k_{max}$')
-        plt.xlabel(r'$\ell$')
-        plt.savefig(self.root+'k_max.pdf')
-
-        plt.figure()
-        plt.title('Integrand for $C_\ell$')
-        plt.plot(k_list[:index_closest_to_accuracy_target_TT]*self.Lx/(2*np.pi), integrand[:index_closest_to_accuracy_target_TT])
-        plt.savefig(self.root+'figs/transfer_squared_P_k_k_ell{}.pdf'.format(l))
-        '''
         print('Done. k_max for TT ell_max =', self.k_max_list[0, l_max], 'k_max for EE ell_max =', self.k_max_list[1, l_max])
     
-    def calculate_c_lmlpmp(self, only_diag=False, normalize=False, plotting = True, plot_param={}, parallel_cov = True, save_cov=False):
+    def calculate_c_lmlpmp(self, only_diag=False, normalize=False, plotting = True, plot_param={}, save_cov=False):
         # Calculaget_c_lmlpmp, the off-diagonal and on-diagonal power spectrum
         l_max = self.l_max
 
@@ -245,16 +227,12 @@ class Topology:
         elif plotting == False:
             ell_range = np.array([2, self.l_max])
             ell_p_range = np.array([2, self.l_max])
-            if parallel_cov:
-                C_TT_lmlpmp = self.get_c_lmlpmp_multiprocessing(
-                    ell_range = ell_range,
-                    ell_p_range = ell_p_range
-                )
-            else:
-                C_TT_lmlpmp = self.get_c_lmlpmp_top(
-                    ell_range = ell_range,
-                    ell_p_range = ell_p_range
-                )
+
+            C_TT_lmlpmp = self.get_c_lmlpmp_multiprocessing(
+                ell_range = ell_range,
+                ell_p_range = ell_p_range
+            )
+
             
         else:
             num_plots = plot_param['l_ranges'][:, 0].size
@@ -297,16 +275,11 @@ class Topology:
                 # Make sure the l_ranges do not overlap!
                 ell_range = np.array(plot_param['l_ranges'][i, :])
                 ell_p_range = np.array(plot_param['lp_ranges'][i, :])
-                if parallel_cov:
-                    C_TT_lmlpmp = self.get_c_lmlpmp_multiprocessing(
-                        ell_range = ell_range,
-                        ell_p_range = ell_p_range
-                    )
-                else:
-                    C_TT_lmlpmp = self.get_c_lmlpmp_top(
-                        ell_range = ell_range,
-                        ell_p_range = ell_p_range
-                    )
+                
+                C_TT_lmlpmp = self.get_c_lmlpmp_multiprocessing(
+                    ell_range = ell_range,
+                    ell_p_range = ell_p_range
+                )
                 
                 normalized_clmlpmp = normalize_c_lmlpmp(
                     C_TT_lmlpmp, 
@@ -314,7 +287,8 @@ class Topology:
                     l_min=l_min, 
                     l_max=l_max, 
                     lp_min = lp_min,
-                    lp_max = lp_max)
+                    lp_max = lp_max,
+                    cl_accuracy = self.c_l_accuracy)
 
                 np.save(self.root+'corr_matrix_l_{}_{}_lp_{}_{}.npy'.format(
                     l_min, l_max,
@@ -338,7 +312,8 @@ class Topology:
                         l_min=l_min, 
                         l_max=l_max, 
                         lp_min = lp_min,
-                        lp_max = lp_max)
+                        lp_max = lp_max,
+                        cl_accuracy = self.c_l_accuracy)
         else:
             return C_TT_lmlpmp
 
@@ -414,22 +389,17 @@ class Topology:
         A_ssp = normalize_c_lmlpmp(c_lmlpmp_ordered, self.powers[:, 0], cl_accuracy = self.c_l_accuracy, l_min=2, lp_min=2, l_max=self.l_max, lp_max=self.l_max)
 
         w, _ = np.linalg.eig(A_ssp)
-        kl = 0
+        kl_P_assuming_Q = 0
+        kl_Q_assuming_P = 0
         for eig in w:
-            kl += (np.log(np.abs(eig)) + 1/eig - 1)/2
-
-        #(_, logdet_norm) = np.linalg.slogdet(A_ssp)
-        #logdet_norm = np.abs(logdet_norm)
-        #res = np.sum(np.abs(1/np.diag(A_ssp)))
-        #tot = logdet_norm / 2  + res / 2 - self.l_max * (self.l_max+2)/2 + 3/2
-        #print('tot, det, res, leftovers', tot, logdet_norm/2, res/2, - self.l_max * (self.l_max+2)/2 + 3/2)
-        #print('old way vs new way', tot, t)
+            kl_P_assuming_Q += (np.log(np.abs(eig)) + 1/eig - 1)/2
+            kl_Q_assuming_P += (-np.log(np.abs(eig)) + eig - 1)/2
 
         np.fill_diagonal(A_ssp, 0)
         
         a_t = np.sqrt(np.sum(np.abs(A_ssp)**2))
 
-        return np.real(kl), np.real(a_t)
+        return np.real(kl_P_assuming_Q), np.real(kl_Q_assuming_P), np.real(a_t)
 
     def sampled_kosowsky_statistics(self, N_s = 400, num_times=1):
         print('Sampling kosowsky statistics')
@@ -440,28 +410,53 @@ class Topology:
         for j in tqdm(range(num_times)):
             sampled_m_mp_fixed_ell_ellp = np.zeros((l_max+1, l_max+1, N_s, 2), dtype=np.int_)
             for l in range(2, l_max+1):
-                for l_p in range(2, l_max+1):
-                    num_m_m_p = (2*l+1)*(2*l_p+1)
-                    if num_m_m_p <= N_s:
-                        i = 0
-                        for m in range(-l, l+1):
-                            for m_p in range(-l_p, l_p+1):
-                                sampled_m_mp_fixed_ell_ellp[l, l_p, i, 0] = m
-                                sampled_m_mp_fixed_ell_ellp[l, l_p, i, 1] = m_p
-                                i += 1
+                for l_p in range(l, l_max+1):
+                    # Only sample upper triangle of the covariance matrix since the matrix is hermitian
+                    if l == l_p:
+                        num_m_m_p = l * (2*l+1)
+                        if num_m_m_p <= N_s:
+                            i = 0
+                            for m in range(-l, l):
+                                for m_p in range(m+1, l_p+1):
+                                    sampled_m_mp_fixed_ell_ellp[l, l_p, i, 0] = m
+                                    sampled_m_mp_fixed_ell_ellp[l, l_p, i, 1] = m_p
+                                    i += 1
+                        else:
+                            # Create a random list of mp > m. Please someone, make this into a one-liner
+                            m_list = np.arange(-l, l+1)
+                            m_p_list = np.arange(-l_p, l_p+1)
+                            list_of_comb = np.array(list(product(m_list, m_p_list)))
+                            list_of_comb_mp_over_m = np.zeros((num_m_m_p, 2))
+                            i = 0
+                            for k in range(list_of_comb.shape[0]):
+                                if list_of_comb[k, 1] > list_of_comb[k, 0]:
+                                    list_of_comb_mp_over_m[i, :] = list_of_comb[k, :]
+                                    i += 1
+                            sampled_m_mp_fixed_ell_ellp[l, l_p, :, :] = np.array(sample(list(list_of_comb_mp_over_m), k=N_s))
                     else:
-                        # Create a random list of m, mp to calculate the element for
-                        m_list = np.arange(-l, l+1)
-                        m_p_list = np.arange(-l_p, l_p+1)
-                        sampled_m_mp_fixed_ell_ellp[l, l_p, :, :] = np.array(sample(list(product(m_list, m_p_list)), k=N_s))
-                        #sampled_m_mp_fixed_ell_ellp[l, l_p, :, 0] = np.random.choice(m_list, N_s)
-                        #sampled_m_mp_fixed_ell_ellp[l, l_p, :, 1] = np.random.choice(m_p_list, N_s)
+                        num_m_m_p = (2*l+1)*(2*l_p+1)
+                        if num_m_m_p <= N_s:
+                            i = 0
+                            for m in range(-l, l+1):
+                                for m_p in range(-l_p, l_p+1):
+                                    sampled_m_mp_fixed_ell_ellp[l, l_p, i, 0] = m
+                                    sampled_m_mp_fixed_ell_ellp[l, l_p, i, 1] = m_p
+                                    i += 1
+                        else:
+                            # Create a random list of m, mp to calculate the element for
+                            m_list = np.arange(-l, l+1)
+                            m_p_list = np.arange(-l_p, l_p+1)
+                            sampled_m_mp_fixed_ell_ellp[l, l_p, :, :] = np.array(sample(list(product(m_list, m_p_list)), k=N_s))
+
             C_lmlpmp = self.get_kosowsky_stat_multiprocessing(N_s, sampled_m_mp_fixed_ell_ellp)
 
             kosowsky_stats = 0
             for l in range(2, l_max+1):
-                for l_p in range(2, l_max+1):
-                    num_m_m_p = (2*l+1)*(2*l_p+1)
+                for l_p in range(l, l_max+1):
+                    if l == l_p:
+                        num_m_m_p = l * (2*l+1)
+                    else:
+                        num_m_m_p = (2*l+1)*(2*l_p+1)
 
                     cur = np.sum(np.abs(C_lmlpmp[l, l_p, :num_m_m_p]) ** 2 / (self.powers[l, 0] * self.powers[l_p, 0] * self.c_l_accuracy**2))
                     if num_m_m_p > N_s:
@@ -469,8 +464,12 @@ class Topology:
                     else:
                         kosowsky_stats += cur
 
+            # Multiply by two since we only did upper triangle.
+            kosowsky_stats *= 2
             kosowsky_list[j] = np.real(np.sqrt(kosowsky_stats))
             print(kosowsky_list[j])
+            if j > 1:
+                print(np.mean(kosowsky_list[:j+1]), np.std(kosowsky_list[:j+1]))
 
         return kosowsky_list
 
@@ -513,7 +512,7 @@ class Topology:
         plt.fill_between(ell, (correct_D_l - D_l_cv)[l_min:], (correct_D_l + D_l_cv)[l_min:], color='grey', alpha=0.5)
 
         if c_l_a is not None:
-            for i in range(2):
+            for i in range(len(c_l_a[0, :])):
                 plt.plot(ell, get_D_l(c_l_a[:, i])[l_min:self.l_max+1], label='Realization {}'.format(i), alpha=0.3)
 
         plt.legend()

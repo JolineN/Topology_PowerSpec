@@ -17,7 +17,7 @@ def cart2spherical(xyz):
     # Calculates spherical coordinates from cartesian coordinates
     xy = xyz[0]**2 + xyz[1]**2
 
-    #phi
+    # phi
     phi = np.arctan2(xyz[1], xyz[0])
     # theta
     theta = np.arctan2(np.sqrt(xy), xyz[2])
@@ -159,6 +159,10 @@ def do_integrand_pre_processing(unique_k_amp, scalar_pk_k3, transfer_delta_kl, l
 
 @njit
 def normalize_c_lmlpmp(c_lmlpmp, camb_c_l, l_min, l_max, lp_min, lp_max, cl_accuracy=1):
+    # Normalize the covariance matrix by dividing sqrt(c_l * c_l'). This is used in the KL divergence.
+    # I also divide by cl_accuracy as an approximation of the lost power along the diagonal.
+    # Wihtout it we get that the diagonal in the L->infinity limit becomes cl_accuracy and not 1. This
+    # adds a contribution to the KL divergence which should not be there.
     normalized_c_lmlpmp = np.zeros(c_lmlpmp.shape, dtype=np.complex128)
     for l in range(l_min, l_max+1):
         for m in range(-l, l+1):
@@ -168,7 +172,3 @@ def normalize_c_lmlpmp(c_lmlpmp, camb_c_l, l_min, l_max, lp_min, lp_max, cl_accu
                     index_p = lp * (lp+1) + mp - lp_min**2                    
                     normalized_c_lmlpmp[index, index_p] = c_lmlpmp[index, index_p] / (np.sqrt(camb_c_l[l]*camb_c_l[lp]) * cl_accuracy)
     return normalized_c_lmlpmp
-
-#Things to add:
-# 1) Calculating all off-diagonal elements take time, maybe add a bool that if true only calculates diagonal elements
-# 2) A way to generalize for different topologies. Class inheritance?

@@ -11,6 +11,7 @@ parameter = {
   'x0': np.array([0,0,0], dtype=np.float64),
   'beta': 90,
   'alpha': 90,
+  'gamma': 0,
 
 
   # OTHER PARAMETERS
