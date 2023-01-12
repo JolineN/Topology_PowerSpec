@@ -15,6 +15,8 @@ class E1(Topology):
     self.beta = param['beta'] * np.pi / 180
     self.V = self.Lx * self.Ly * self.Lz * sin(self.beta) * sin(self.alpha)
     self.l_max = param['l_max']
+    self.number_of_a_lm_realizations = param['number_of_a_lm_realizations']
+
     self.param = param
 
     if param['Lx'] == param['Ly'] and param['Ly'] == param['Lz'] and param['beta'] == 90 and param['alpha'] == 90:
@@ -52,7 +54,8 @@ class E1(Topology):
       lm_index,
       sph_harm_no_phase,
       delta_k_n,
-      transfer_delta_kl
+      transfer_delta_kl,
+      iteration
   ):
       # This function seems unnecessary, but Numba does not allow return_dict
       # which is of type multiprocessing.Manager
@@ -68,7 +71,8 @@ class E1(Topology):
           lm_index,
           sph_harm_no_phase,
           delta_k_n,
-          transfer_delta_kl
+          transfer_delta_kl,
+          random_phase = self.random_phase[:, iteration]
       )
 
   def get_c_lmlpmp_per_process(
@@ -185,10 +189,15 @@ class E1(Topology):
     return c_lmlpmp
 
   def get_list_of_k_phi_theta(self):
-    return get_list_of_k_phi_theta(max(self.k_max_list[0, :]), self.Lx, self.Ly, self.Lz, self.beta, self.alpha)
+    k_amp, phi, theta, random_phase = get_list_of_k_phi_theta(max(self.k_max_list[0, :]), self.Lx, self.Ly, self.Lz, self.beta, self.alpha, self.number_of_a_lm_realizations)
+
+    if self.number_of_a_lm_realizations >= 1:
+      self.random_phase = random_phase
+
+    return k_amp, phi, theta
 
 @njit(parallel = False)
-def get_list_of_k_phi_theta(k_max, L_x, L_y, L_z, beta, alpha):
+def get_list_of_k_phi_theta(k_max, L_x, L_y, L_z, beta, alpha, number_of_a_lm_realizations=0):
     # Returns list of k, phi, and theta for this topology
 
     tan_b_inv = 1/tan(beta)
@@ -204,17 +213,19 @@ def get_list_of_k_phi_theta(k_max, L_x, L_y, L_z, beta, alpha):
     k_amp = np.zeros(n_x_max * n_y_max * n_z_max * 8)
     phi = np.zeros(n_x_max * n_y_max * n_z_max * 8)
     theta = np.zeros(n_x_max * n_y_max * n_z_max * 8)
+    
+    num_alm_real = number_of_a_lm_realizations if number_of_a_lm_realizations>=1 else 1
+    random_phase = np.zeros((n_x_max * n_y_max * n_z_max * 8, num_alm_real), dtype=np.complex128)
+    if number_of_a_lm_realizations >= 1:
+      random_phase_index = -1 * np.ones((2 * n_x_max, 2 * n_y_max, 2 * n_z_max), dtype=np.intc)
 
     cur_index = 0
 
     for n_x in prange(-n_x_max, n_x_max + 1):
       k_x = 2*pi * n_x / L_x
 
-      for n_z in range(-n_z_max, n_z_max+1):
-        
+      for n_z in range(-n_z_max, n_z_max+1):        
         k_z = 2*pi * n_z * sin_b_inv / L_z - k_x * tan_b_inv
-
-
         k_xz_squared = k_x**2 + k_z**2
 
         if k_xz_squared > k_max**2:
@@ -222,7 +233,6 @@ def get_list_of_k_phi_theta(k_max, L_x, L_y, L_z, beta, alpha):
 
         for n_y in range(-n_y_max, n_y_max+1):
           k_y = 2*pi * n_y * sin_a_inv / L_y - k_x * tan_a_inv
-
 
           k_xyz = sqrt(k_xz_squared + k_y**2)
           if k_xyz > k_max or k_xyz < 1e-5:
@@ -232,14 +242,27 @@ def get_list_of_k_phi_theta(k_max, L_x, L_y, L_z, beta, alpha):
           cur_phi, cur_theta = cart2spherical(np.array([k_x, k_y, k_z])/k_xyz)
           phi[cur_index] = cur_phi
           theta[cur_index] = cur_theta
+
+          if number_of_a_lm_realizations >= 1:
+            opposite_phase_index = random_phase_index[-n_x + n_x_max, -n_y + n_y_max, -n_z + n_z_max]
+            if opposite_phase_index == -1:
+              # Phase has not been set for -vec(k), so we set it here
+              for i in range(number_of_a_lm_realizations):
+                random_phase[cur_index, i] = np.exp(1j*np.random.uniform(0.0, np.pi*2)) * np.random.normal(loc=0.0, scale=1.0)
+              random_phase_index[n_x + n_x_max, n_y + n_y_max, n_z + n_z_max] = cur_index
+            else:
+              # Phase has been set for -vec(k), so we set the phase for k to be minus this
+              random_phase[cur_index, :] = np.conjugate(random_phase[opposite_phase_index, :])
+
           cur_index += 1
 
     k_amp = k_amp[:cur_index-1]
     phi = phi[:cur_index-1]   
     theta = theta[:cur_index-1]
+    random_phase = random_phase[:cur_index-1, :]
 
     print('Final num of elements:', k_amp.size, 'Minimum k_amp', np.amin(k_amp), 'n_x_max', n_x_max, 'n_z_max', n_z_max)
-    return k_amp, phi, theta
+    return k_amp, phi, theta, random_phase
 
 @njit(fastmath=True)
 def get_alm_per_process_numba(
@@ -254,7 +277,8 @@ def get_alm_per_process_numba(
     lm_index,
     sph_harm_no_phase,
     delta_k_n,
-    transfer_delta_kl
+    transfer_delta_kl,
+    random_phase
 ): 
     # This function returns parts of the summation over wavenumber k to get a_lm
     num_l_m = int((l_max + 1)*(l_max + 2)/2)
@@ -266,9 +290,10 @@ def get_alm_per_process_numba(
       m_list = np.arange(0, l_max+1)
       phase_list = np.exp(-1j * phi[i] * m_list)
 
-      random_delta_k_n = np.random.normal(loc=0, scale = delta_k_n[k_unique_index_cur])
-      uniform = np.random.uniform(0.0, np.pi*2)
-      random_delta_k_n *= np.exp(1j * uniform)
+      #random_delta_k_n = np.random.normal(loc=0, scale = delta_k_n[k_unique_index_cur])
+      #uniform = np.random.uniform(0.0, np.pi*2)
+      #random_delta_k_n *= np.exp(1j * random_phase[i])
+      random_delta_k_n = delta_k_n[k_unique_index_cur] * random_phase[i]
 
       for l in range(2, l_max+1):
           if k_amp_cur > k_max_list[l]:

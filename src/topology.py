@@ -232,8 +232,6 @@ class Topology:
                 ell_range = ell_range,
                 ell_p_range = ell_p_range
             )
-
-            
         else:
             num_plots = plot_param['l_ranges'][:, 0].size
             ell = np.arange(2, self.l_max+1, dtype=np.int32)
@@ -317,20 +315,20 @@ class Topology:
         else:
             return C_TT_lmlpmp
 
-    def make_alm_realizations(self, plot_alm=True, save_alm = False, it=2):
+    def make_alm_realizations(self, plot_alm=True, save_alm = False):
         # Make it number of alm realizations. These can be saved in .npy files
         l_max = self.l_max
+        n_alm_realizations = self.number_of_a_lm_realizations
+        cl_list = np.zeros((l_max+1, n_alm_realizations))
 
-        cl_list = np.zeros((l_max+1, it))
-
-        if save_alm: alm_list = np.zeros((it, int((l_max + 1)*(l_max + 2)/2)), dtype=np.complex128)
+        if save_alm: alm_list = np.zeros((n_alm_realizations, int((l_max + 1)*(l_max + 2)/2)), dtype=np.complex128)
 
         print('')
         print('***********')
         print('Calculating a_lm realizations')
         print('***********')
         print('')
-        for i in tqdm(range(it)):
+        for i in tqdm(range(n_alm_realizations)):
             a_lm, c_l = self.get_alm_numba(
                 V=self.V,
                 k_amp=self.k_amp,
@@ -342,7 +340,8 @@ class Topology:
                 lm_index = self.lm_index,
                 sph_harm_no_phase = self.sph_harm_no_phase,
                 delta_k_n = np.sqrt(self.scalar_pk_k3),
-                transfer_T_delta_kl = self.transfer_T_delta_kl
+                transfer_T_delta_kl = self.transfer_T_delta_kl,
+                iteration = i
             )
 
             cl_list[:, i] = c_l
@@ -361,7 +360,7 @@ class Topology:
             int(self.Ly),
             int(self.Lz),
             l_max,
-            it),
+            n_alm_realizations),
             alm_list)
 
         return cl_list
@@ -617,7 +616,8 @@ class Topology:
         lm_index,
         sph_harm_no_phase,
         delta_k_n,
-        transfer_T_delta_kl
+        transfer_T_delta_kl,
+        iteration
         ):
         num_l_m = int((l_max + 1)*(l_max + 2)/2)
         a_lm = np.zeros(num_l_m, dtype=np.complex128)
@@ -653,7 +653,8 @@ class Topology:
                 lm_index,
                 sph_harm_no_phase,
                 delta_k_n,
-                transfer_T_delta_kl
+                transfer_T_delta_kl,
+                iteration
             )
             p = multiprocessing.Process(target=self.get_alm_per_process, args=args)
             jobs.append(p)
