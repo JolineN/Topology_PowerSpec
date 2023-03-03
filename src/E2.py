@@ -267,10 +267,10 @@ def get_list_of_k_phi_theta(k_max, L_x, L_y, L_z, x0, beta, alpha, gamma):
 
           cur_index += 1
     print('Eigenmode 2:', cur_index)
-    k_amp = k_amp[:cur_index-1]
-    phi = phi[:cur_index-1]   
-    theta = theta[:cur_index-1]
-    tilde_xi = tilde_xi[:cur_index-1, :]
+    k_amp = k_amp[:cur_index]
+    phi = phi[:cur_index]   
+    theta = theta[:cur_index]
+    tilde_xi = tilde_xi[:cur_index, :]
 
     print('E2 Final num of elements:', k_amp.size, 'Minimum k_amp', np.amin(k_amp), 'n_x_max', n_x_max, 'n_z_max', n_z_max)
     return k_amp, phi, theta, tilde_xi

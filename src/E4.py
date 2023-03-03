@@ -189,7 +189,7 @@ def get_list_of_k_phi_theta(k_max, L_12, L_z, x0, beta, M_B_j_minus_identity, M_
     sin_b_inv = 1/sin(beta)
 
     n_x_max = int(np.ceil(k_max * L_12 / (2*pi)))
-    n_y_max = 4*int(np.ceil(k_max * L_12 / (2*pi)))
+    n_y_max = 2*int(np.ceil(k_max * L_12 / (2*pi)))
     n_z_max = int(np.ceil(k_max * L_z * 3 / (2*pi))) # Because of eigenmode 1
  
     k_amp = np.zeros(n_x_max * n_y_max * n_z_max * 8)
@@ -199,6 +199,7 @@ def get_list_of_k_phi_theta(k_max, L_12, L_z, x0, beta, M_B_j_minus_identity, M_
     tilde_xi = np.zeros((n_x_max * n_y_max * n_z_max * 8, 3), dtype=np.complex128)
 
     T_B = L_z * np.array([cos(beta), 0, sin(beta)])
+    k_max_squared = k_max**2
 
     cur_index = 0
 
@@ -209,7 +210,7 @@ def get_list_of_k_phi_theta(k_max, L_12, L_z, x0, beta, M_B_j_minus_identity, M_
     for n_z in range(-n_z_max, n_z_max+1):
       if n_z % 3 != 0 or n_z == 0:
         continue
-      k_z = 2*pi * n_z * sin_b_inv / (3 * L_z * sin(beta))
+      k_z = 2*pi * n_z * sin_b_inv / (3 * L_z)
       k_xyz = sqrt(k_z**2)
       if k_xyz > k_max:
         continue
@@ -221,21 +222,35 @@ def get_list_of_k_phi_theta(k_max, L_12, L_z, x0, beta, M_B_j_minus_identity, M_
       tilde_xi[cur_index, :] = exp(- 1j * k_z * x0[2])
       cur_index += 1
     print(cur_index)
+
     # Eigenmode 2
-    for n_x in range(0, n_x_max+1):
-      k_x = 2*pi * n_x / L_12
-      for n_y in range(1, n_y_max+1):
+    for n_z in range(-n_z_max, n_z_max+1):
+      k_z = 2*pi * n_z * sin_b_inv / (3 * L_z)
+      k_z_squared = k_z**2
+      if k_z_squared > k_max_squared:
+        continue
 
-        k_y = 4*pi * n_y / (sqrt(3)*L_12) + k_x/np.sqrt(3)
+      for n_x in range(-n_x_max, n_x_max+1):
+        k_x = 2*pi * n_x / L_12
 
-        k_xy_squared = k_x**2 + k_y**2
-        if k_xy_squared > k_max**2:
+        k_xz_squared = k_x**2 + k_z_squared
+        if k_xz_squared > k_max**2:
           continue
-        
-        for n_z in range(-n_z_max, n_z_max+1):
-          k_z = 2*pi * n_z * sin_b_inv / (3*L_z * sin(beta))
-          
-          k_xyz = sqrt(k_xy_squared + k_z**2)
+
+        if n_x >= 0:
+          n_y_start = 0
+          n_y_end = n_y_max
+        else:
+          n_y_start = -n_y_max
+          n_y_end = -1
+
+        for n_y in range(n_y_start, n_y_end+1):
+          if n_y == 0 and n_x == 0:
+            continue
+
+          k_y = 4*pi * n_y / (sqrt(3)*L_12) + k_x/np.sqrt(3)
+
+          k_xyz = sqrt(k_xz_squared + k_y**2)
 
           if k_xyz > k_max or k_xyz < 1e-6:
             continue
@@ -255,10 +270,10 @@ def get_list_of_k_phi_theta(k_max, L_12, L_z, x0, beta, M_B_j_minus_identity, M_
           tilde_xi[cur_index, :] *= exp(- 1j * np.dot(k_vec, x0))/sqrt(3) 
           
           cur_index += 1
-    k_amp = k_amp[:cur_index-1]
-    phi = phi[:cur_index-1]   
-    theta = theta[:cur_index-1]
-    tilde_xi = tilde_xi[:cur_index-1, :]
+    k_amp = k_amp[:cur_index]
+    phi = phi[:cur_index]   
+    theta = theta[:cur_index]
+    tilde_xi = tilde_xi[:cur_index, :]
 
     print('Final num of elements:', k_amp.size, 'Minimum k_amp', np.amin(k_amp), 'n_x_max', n_x_max, 'n_z_max', n_z_max)
     return k_amp, phi, theta, tilde_xi

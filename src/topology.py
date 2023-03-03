@@ -24,6 +24,7 @@ class Topology:
         self.l_max = param['l_max']
         self.c_l_accuracy = param['c_l_accuracy']
         self.do_polarization = param['do_polarization']
+        self.number_of_a_lm_realizations = param['number_of_a_lm_realizations']
         self.get_initial_kmax_list()
 
         self.fig_name = 'l_max_{}'.format(self.l_max)
@@ -232,6 +233,7 @@ class Topology:
                 ell_range = ell_range,
                 ell_p_range = ell_p_range
             )
+            self.C_TT_lmlpmp = C_TT_lmlpmp
         else:
             num_plots = plot_param['l_ranges'][:, 0].size
             ell = np.arange(2, self.l_max+1, dtype=np.int32)
@@ -303,6 +305,7 @@ class Topology:
             plt.savefig(
                 self.root+'figs/c_tt_offdiagonal_{}.pdf'.format('high_ell' if ell_range[1]>50 or ell_p_range[1]> 50 else 'low_ell'),
                 bbox_inches='tight')
+            self.C_TT_lmlpmp = C_TT_lmlpmp
         if save_cov == True and num_plots == 1:
             return C_TT_lmlpmp, normalize_c_lmlpmp(
                         C_TT_lmlpmp, 
@@ -320,8 +323,7 @@ class Topology:
         l_max = self.l_max
         n_alm_realizations = self.number_of_a_lm_realizations
         cl_list = np.zeros((l_max+1, n_alm_realizations))
-
-        if save_alm: alm_list = np.zeros((n_alm_realizations, int((l_max + 1)*(l_max + 2)/2)), dtype=np.complex128)
+        alm_list = np.zeros((n_alm_realizations, int((l_max + 1)*(l_max + 2)/2)), dtype=np.complex128)
 
         print('')
         print('***********')
@@ -345,8 +347,7 @@ class Topology:
             )
 
             cl_list[:, i] = c_l
-
-            if save_alm: alm_list[i, :] = a_lm
+            alm_list[i, :] = a_lm
 
             # Plot only first 4 realizations for check
             if i < 4 and plot_alm:
@@ -355,15 +356,17 @@ class Topology:
                 hp.mollview(map, fig=fig2, remove_dip=True)
                 fig2.savefig(self.root+'realizations/map_{}.pdf'.format(i))
 
-        if save_alm: np.save(self.root+'realizations/realizations_Lx_{}_Ly_{}_Lz_{}_lmax_{}_num_{}.npy'.format(
-            int(self.Lx),
-            int(self.Ly),
-            int(self.Lz),
-            l_max,
-            n_alm_realizations),
-            alm_list)
+        if save_alm:
+            np.save(self.root+'realizations/realizations_Lx_{}_Ly_{}_Lz_{}_lmax_{}_num_{}.npy'.format(
+                int(self.Lx),
+                int(self.Ly),
+                int(self.Lz),
+                l_max,
+                n_alm_realizations),
+                alm_list
+            )
 
-        return cl_list
+        return alm_list, cl_list
 
     def make_euclidean_realizations(self, plot_alms=False):
         it=1000
@@ -380,10 +383,10 @@ class Topology:
 
         np.save(self.root+'realizations/realizations_L_infty_lmax_{}_num_{}.npy'.format(l_max, it), alm_list)
 
-    def calculate_exact_kl_divergence(self, parallel_cov=True):
+    def calculate_exact_kl_divergence(self):
         print('Calculating KL divergence')
 
-        c_lmlpmp_ordered = self.calculate_c_lmlpmp(only_diag=False, normalize=False, plotting = False, parallel_cov = parallel_cov)
+        c_lmlpmp_ordered = self.calculate_c_lmlpmp(only_diag=False, normalize=False, plotting = False)
 
         A_ssp = normalize_c_lmlpmp(c_lmlpmp_ordered, self.powers[:, 0], cl_accuracy = self.c_l_accuracy, l_min=2, lp_min=2, l_max=self.l_max, lp_max=self.l_max)
 
@@ -472,30 +475,122 @@ class Topology:
 
         return kosowsky_list
 
-    def make_realization_c_lmlpmp_cholesky(self):
+    def make_realization_c_lmlpmp_cholesky(self, number_of_realizations=10000):
         # THIS CODE SEEMS TO BE BUGGY!
         # DO NOT TRUST YET
 
-        C_TT = self.C_TT
-        _, dim = C_TT.shape
-        #print(C_TT)
-        v1 = np.ones(dim)
-        print(np.dot(v1, np.dot(C_TT,v1)))
-        L = np.linalg.cholesky(C_TT)
-        #L = scipy.linalg.cholesky(C_TT)
+        C_TT = self.C_TT_lmlpmp
+
+        # Transform C to Tilde(C) in new basis where the elements are
+        # sqrt(2)*Im(a_lm), a_l0, sqrt(2)*Re(a_lm)
+
+        Tilde_C = np.zeros(C_TT.shape)
+        for l in range(2, self.l_max+1):
+            i_block = l * (l + 1) - 2**2
+            for lp in range(2, self.l_max+1):
+                j_block = lp * (lp + 1) - 2**2
+                for i in range(2*l+1):
+                    # i < l: sqrt(2) Im a_lm
+                    # i = l: a_l0
+                    # i > l: sqrt(2) Re a_lm
+                    
+                    if i < l:
+                        m = l - i
+                    else:
+                        m = i - l
+                    index_pluss_m = int(i_block + m)
+                    index_minus_m = int(i_block - m)
+                    for j in range(2*lp+1):
+                        if j < lp:
+                            mp = lp - j
+                        else:
+                            mp = j - lp
+                        
+                        indexp_pluss_mp = int(j_block + mp)
+                        indexp_minus_mp = int(j_block - mp)
+
+                        if i < l and j < lp:
+                            # Im a_{lm}
+                            # Im a_{l'm'}
+                            C = -1*1/2  * ((-1)**mp * C_TT[index_pluss_m, indexp_minus_mp] - C_TT[indexp_pluss_mp, index_pluss_m] - C_TT[index_pluss_m, indexp_pluss_mp] + (-1)**m * C_TT[index_minus_m, indexp_pluss_mp])
+                        elif i < l and j >= lp:
+                            # Im a_{lm}
+                            # Re a_{l'm'}
+                            C = -1j*1/2 * ((-1)**mp * C_TT[index_pluss_m, indexp_minus_mp] - C_TT[indexp_pluss_mp, index_pluss_m] + C_TT[index_pluss_m, indexp_pluss_mp] - (-1)**m * C_TT[index_minus_m, indexp_pluss_mp])
+                        elif i >= l and j < lp:
+                            # Re a_{lm}
+                            # Im a_{l'm'}         
+                            C = -1j*1/2 * ((-1)**mp * C_TT[index_pluss_m, indexp_minus_mp] + C_TT[indexp_pluss_mp, index_pluss_m] - C_TT[index_pluss_m, indexp_pluss_mp] - (-1)**m * C_TT[index_minus_m, indexp_pluss_mp])   
+                        elif i >= l and j >= lp:
+                            # Re a_{lm}
+                            # Re a_{l'm'}
+                            C = 1/2     * ((-1)**mp * C_TT[index_pluss_m, indexp_minus_mp] + C_TT[indexp_pluss_mp, index_pluss_m] + C_TT[index_pluss_m, indexp_pluss_mp] + (-1)**m * C_TT[index_minus_m, indexp_pluss_mp])
+                        if m == 0:
+                            C *= 1/sqrt(2)
+                        if mp == 0:
+                            C *= 1/sqrt(2)
+                        # C might have an imaginary part due to minor numerical error
+                        Tilde_C[i_block+i-l, j_block+j-lp] = np.real(C)
+        
+        print(Tilde_C)
+        plt.figure()
+        plt.imshow(np.abs(Tilde_C), cmap='inferno', norm=LogNorm(), origin='lower', interpolation = 'nearest')
+        plt.colorbar()
+        plt.savefig('tmp_{}.pdf'.format(self.param['topology']))
+        Tilde_L = np.linalg.cholesky(Tilde_C)
+
+        Q = np.zeros(C_TT.shape, dtype=np.complex128)
+        for l in range(2, self.l_max+1):
+            i_block = l * (l + 1) - 2**2
+            for m in range(-l, l+1):
+                if m == 0:
+                    Q[i_block, i_block] = 1
+                elif m < 0:
+                    # a_l-m = (-1)^m Re a_lm -1j (-1)^m a_lm
+                    Q[i_block + m, i_block + m] = -1j/sqrt(2) * (-1)**m
+                    Q[i_block + m, i_block - m] = 1/sqrt(2) * (-1)**m
+                else:
+                    # a_lm  = Re a_lm + 1j Im a_lm
+                    Q[i_block + m, i_block + m] = 1/sqrt(2)
+                    Q[i_block + m, i_block - m] = 1j*1/sqrt(2)
+
         
         # This looks scary, but its just a random COMPLEX vector of mean 0 and sigma=1
         # for both the real part and imaginary part
-        uncorr_alm = np.random.normal(0, 1, (L.shape[0], 2)).view(np.complex128)[:, 0]
+        #uncorr_alm = np.random.normal(0, 1, (L.shape[0], 2)).view(np.complex128)[:, 0]
+        
+        num_alm = self.l_max * (self.l_max + 1) + self.l_max - 3
+        num_real = number_of_realizations
+        list_realizations = np.zeros((num_real, num_alm), dtype=np.complex128)
+        c_l = np.zeros((num_real, self.l_max+1))
+        a_lm_real_healpix = np.zeros((num_real, hp.Alm.getsize(self.l_max)), dtype=np.complex128)
+        print(a_lm_real_healpix.shape)
+        for i in tqdm(range(num_real)):
+            uncorr_alm = np.random.normal(size = num_alm)
+            corr_alm = np.dot(Q, np.dot(Tilde_L, uncorr_alm))
+            list_realizations[i, :] = corr_alm
 
-        corr_alm = np.dot(L, uncorr_alm)
+            for l in range(2, self.l_max+1):
+                m = np.arange(0, self.l_max+1)
+                idx = hp.Alm.getidx(self.l_max, l, m)
+                a_lm_real_healpix[i, idx] = corr_alm[l * (l + 1) - 2**2 + m]
 
-        map = hp.alm2map(corr_alm, 512, pol=False)
-        plt.figure()
-        hp.mollview(map, remove_dip=True)
-        plt.savefig(self.root+'realizations/map_L_{}_lmax_{}.pdf'.format(int(self.L/1000), self.l_max))
+            c_l[i, :] = hp.sphtfunc.alm2cl(a_lm_real_healpix[i, :])
+        print('C_ell', np.mean(c_l, axis=0), np.std(c_l, axis=0))
+        print('C_ell diag', self.C_TT_diag[2:])
+        print('C_ell CAMB', self.powers[2:self.l_max+1, 0])
+        #print('a_lm:', corr_alm)
+        #print('random vec:', uncorr_alm)
+        
+        
 
-    def plot_c_l_and_realizations(self, c_l_a=None):
+        #map = hp.alm2map(map_alm, 512, pol=False)
+        #plt.figure()
+        #hp.mollview(map, remove_dip=True)
+        #plt.savefig(self.root+'realizations/map_L_{}_lmax_{}.pdf'.format(int(self.Lx/1000), self.l_max))
+        return a_lm_real_healpix, c_l
+
+    def plot_c_l_and_realizations(self, c_l_a=None, plot_average_real=False):
         l_min=2
         l_max = self.l_max
         ell = np.arange(l_min, l_max+1)
@@ -507,12 +602,17 @@ class Topology:
         plt.figure()
         plt.plot(ell, get_D_l(self.C_TT_diag)[l_min:self.l_max+1], linewidth=4, label=r'Anisotropic $C_\ell$')
         plt.plot(ell, correct_D_l[l_min:self.l_max+1], linewidth=4, label=r'CAMB $C_\ell$')
-
+        print('Power spectrum ratio:', get_D_l(self.C_TT_diag)[l_min:self.l_max+1] / correct_D_l[l_min:self.l_max+1])
         plt.fill_between(ell, (correct_D_l - D_l_cv)[l_min:], (correct_D_l + D_l_cv)[l_min:], color='grey', alpha=0.5)
 
         if c_l_a is not None:
-            for i in range(len(c_l_a[0, :])):
+            num_real = len(c_l_a[0, :]) if len(c_l_a[0, :]) <= 4 else 4
+            for i in range(num_real):
                 plt.plot(ell, get_D_l(c_l_a[:, i])[l_min:self.l_max+1], label='Realization {}'.format(i), alpha=0.3)
+
+        if plot_average_real:
+            av_C_l = np.mean(c_l_a, axis=1)
+            plt.plot(ell, get_D_l(av_C_l)[l_min:self.l_max+1], label='Average realizations', alpha=0.6, color='black', linewidth=4)
 
         plt.legend()
         plt.ylabel(r'$\ell (\ell+1)C^{TT}_\ell / 2\pi \, [\mu K^2]$')
@@ -599,7 +699,7 @@ class Topology:
         if ax_index == 0 or ax_index == 2:  
             ax.set_ylabel(r"$\ell'$")
         if normalize:
-            axim.set_clim(1e-8, 1e0)
+            axim.set_clim(1e-6, 1e0)
         else:
             axim.set_clim(1e-5, 1e2)
         return axim
@@ -624,7 +724,8 @@ class Topology:
         num_indices = k_amp.size
 
         
-        ncpus = multiprocessing.cpu_count()
+        #ncpus = multiprocessing.cpu_count()
+        ncpus=1
         index_thread_split = np.arange(0, num_indices, int(np.ceil(num_indices/ncpus)))
         size = index_thread_split.size
         
@@ -654,7 +755,7 @@ class Topology:
                 sph_harm_no_phase,
                 delta_k_n,
                 transfer_T_delta_kl,
-                iteration
+                self.random_phase[:, iteration]
             )
             p = multiprocessing.Process(target=self.get_alm_per_process, args=args)
             jobs.append(p)

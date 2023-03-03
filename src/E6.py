@@ -1,9 +1,11 @@
 from .topology import Topology
 from .tools import *
 import numpy as np
+import healpy as hp
 from numpy import pi, sin, cos, exp, sqrt, tan
 from numba import njit, prange
 from numba_progress import ProgressBar
+import pyshtools as pysh
 
 class E6(Topology):
   def __init__(self, param, debug=True, make_run_folder = False):
@@ -42,8 +44,28 @@ class E6(Topology):
       alpha_y * (tilde_P_z - tilde_P_x + 2 * tilde_P_z * tilde_P_x) + \
       alpha_z * (tilde_P_x - tilde_P_y + 2 * tilde_P_x * tilde_P_y) + \
       - alpha_x*alpha_y - alpha_y*alpha_z - alpha_z*alpha_x + 2*alpha_x*alpha_y*alpha_z
-    )
+    )**3
+    print(self.V / L_LSS**3)
+
+    l_max = param['l_max']
+    lm_index = np.zeros((l_max+1, l_max+1), dtype=int)
+    for l in range(l_max+1):
+        for m in range(l+1):
+            cur_index = hp.Alm.getidx(l_max, l, m)
+            lm_index[l, m] = cur_index
     
+    num_l_m = int((l_max + 1)*(l_max + 2)/2)
+    sph_harm_no_phase_theta_0_pi_over_2 = np.zeros((2, num_l_m), dtype=np.float64)
+
+    all_sph_harm_theta_0_no_phase = np.real(pysh.expand.spharm(l_max, 0, 0, kind = 'complex', degrees = False, normalization = 'ortho', csphase=-1))
+    all_sph_harm_theta_pi_over_2_no_phase = np.real(pysh.expand.spharm(l_max, pi/2, 0, kind = 'complex', degrees = False, normalization = 'ortho', csphase=-1))
+    for l in range(l_max+1):
+        for m in range(l+1):
+            cur_index = lm_index[l, m]
+            sph_harm_no_phase_theta_0_pi_over_2[0, cur_index] = all_sph_harm_theta_0_no_phase[0, l, m]
+            sph_harm_no_phase_theta_0_pi_over_2[1, cur_index] = all_sph_harm_theta_pi_over_2_no_phase[0, l, m]  
+    self.sph_harm_no_phase_theta_0_pi_over_2 = sph_harm_no_phase_theta_0_pi_over_2
+
     self.x0 = param['x0'] * L_LSS
     if np.linalg.norm(param['x0']) < 1e-6 and np.abs(param['beta'] - 90) < 1e-6  and np.abs(param['alpha'] - 90) < 1e-6:
       self.no_shift = True
@@ -123,7 +145,7 @@ class E6(Topology):
     ell_p_range
   ):
     # This function seems unnecessary, but Numba does not allow return_dict
-    # which is of type multiprocessing.Manager
+    # which is of type multiprocessing.Manager 
 
     return_dict[process_i] = get_c_lmlpmp(
         min_index,
@@ -143,6 +165,7 @@ class E6(Topology):
         tilde_xi = self.tilde_xi,
         eigenmode_index_split = self.eigenmode_index_split,
         no_shift = self.no_shift,
+        sph_harm_no_phase_theta_0_pi_over_2 = self.sph_harm_no_phase_theta_0_pi_over_2,
         progress = None
     )
 
@@ -181,6 +204,7 @@ class E6(Topology):
           ell_range = ell_range,
           tilde_xi = self.tilde_xi,
           eigenmode_index_split = self.eigenmode_index_split,
+          sph_harm_no_phase_theta_0_pi_over_2 = self.sph_harm_no_phase_theta_0_pi_over_2,
           progress = progress
         )
       else:
@@ -200,7 +224,8 @@ class E6(Topology):
           ell_range = ell_range,
           ell_p_range = ell_p_range,
           tilde_xi = self.tilde_xi,
-          no_shift = self.no_shift,
+          eigenmode_index_split = self.eigenmode_index_split,
+          sph_harm_no_phase_theta_0_pi_over_2 = self.sph_harm_no_phase_theta_0_pi_over_2,
           progress = progress
         )
     return c_lmlpmp
@@ -243,6 +268,7 @@ def get_list_of_k_phi_theta(k_max, L_Ax, L_By, L_Cz, alpha_x, alpha_y, alpha_z, 
     ], dtype=np.float64) - np.identity(3)
 
     cur_index = 0
+    eigenmode_index_split = np.zeros(3)
 
     # Eigenmode 1
     k_y = 0
@@ -258,8 +284,9 @@ def get_list_of_k_phi_theta(k_max, L_Ax, L_By, L_Cz, alpha_x, alpha_y, alpha_z, 
       phi[cur_index] = cur_phi
       theta[cur_index] = cur_theta
       for l_mod_2 in range(2):
-        tilde_xi[cur_index, l_mod_2, :, :] = exp(- 1j * k_x * x0[0]) + (-1)**l_mod_2 * exp(1j * k_x * x0[0]) * exp(1j * 2*pi*n_x*alpha_x)
+        tilde_xi[cur_index, l_mod_2, :, :] = 1/sqrt(2) * (exp(- 1j * k_x * x0[0]) + (-1)**l_mod_2 * exp(1j * k_x * x0[0]) * exp(1j * 2*pi*n_x*alpha_x))
       cur_index += 1
+    eigenmode_index_split[0] = cur_index
 
     # Eigenmode 2
     k_x = 0
@@ -275,8 +302,9 @@ def get_list_of_k_phi_theta(k_max, L_Ax, L_By, L_Cz, alpha_x, alpha_y, alpha_z, 
       phi[cur_index] = cur_phi
       theta[cur_index] = cur_theta
       for l_mod_2 in range(2):
-        tilde_xi[cur_index, l_mod_2, :, :] = exp(- 1j * k_y * x0[1]) + (-1)**l_mod_2 * exp(1j * k_y * x0[1]) * exp(1j * 2*pi*n_y*alpha_y)
+        tilde_xi[cur_index, l_mod_2, :, :] = 1/sqrt(2) * (exp(- 1j * k_y * x0[1]) + (-1)**l_mod_2 * exp(1j * k_y * x0[1]) * exp(1j * 2*pi*n_y*alpha_y))
       cur_index += 1
+    eigenmode_index_split[1] = cur_index
 
     # Eigenmode 3
     k_x = 0
@@ -292,21 +320,37 @@ def get_list_of_k_phi_theta(k_max, L_Ax, L_By, L_Cz, alpha_x, alpha_y, alpha_z, 
       phi[cur_index] = cur_phi
       theta[cur_index] = cur_theta
       for l_mod_2 in range(2):
-        tilde_xi[cur_index, l_mod_2, :] = exp(- 1j * k_z * x0[2]) + (-1)**l_mod_2 * exp(1j * k_z * x0[2]) * exp(1j * 2*pi*n_z*alpha_z)
+        tilde_xi[cur_index, l_mod_2, :, :] = 1/sqrt(2) * (exp(- 1j * k_z * x0[2]) + (-1)**l_mod_2 * exp(1j * k_z * x0[2]) * exp(1j * 2*pi*n_z*alpha_z))
       cur_index += 1
+    eigenmode_index_split[2] = cur_index
 
-    eigenmode_index_split = cur_index
     # Eigenmode 4
-    for n_x in range(0, n_x_max+1, 2):
+    for n_x in range(-n_x_max, n_x_max+1):
       k_x = 2*pi * n_x / L_Ax
-      for n_y in range(0, n_y_max+1, 2):
+
+      if n_x < 0:
+        n_y_start = -n_y_max
+        n_y_end = -1
+
+        n_z_start = -n_z_max
+        n_z_end = 0
+      elif n_x > 0:
+        n_y_start = 1
+        n_y_end = n_y_max
+
+        n_z_start = 0
+        n_z_end = n_z_max
+      else:
+        continue
+
+      for n_y in range(n_y_start, n_y_end+1):
         k_y = 2*pi * n_y / L_By
 
         k_xy_squared = k_x**2 + k_y**2
         if k_xy_squared > k_max**2:
           continue
         
-        for n_z in range(0, n_z_max+1, 2):
+        for n_z in range(n_z_start, n_z_end+1):
           k_z = 2*pi * n_z / L_Cz
           
           k_xyz = sqrt(k_xy_squared + k_z**2)
@@ -324,67 +368,18 @@ def get_list_of_k_phi_theta(k_max, L_Ax, L_By, L_Cz, alpha_x, alpha_y, alpha_z, 
           for l_mod_2 in range(2):
             for m_mod_2 in range(2):
               tilde_xi[cur_index, l_mod_2, m_mod_2, 0] = 1 + (-1)**m_mod_2 * exp(-1j * np.dot(k_vec, np.dot(M_C_minus_id, x0))) * exp(1j * np.dot(k_vec, T_C))
-              tilde_xi[cur_index, l_mod_2, m_mod_2, 1] = (-1)**(l_mod_2+m_mod_2)* (exp(-1j * np.dot(k_vec, np.dot(M_A_minus_id, x0))) * exp(1j * np.dot(k_vec, T_A)) + (-1)**m_mod_2 * exp(-1j * np.dot(k_vec, np.dot(M_B_minus_id, x0))) * exp(1j * np.dot(k_vec, T_B)))
-          tilde_xi[cur_index, :, :, :] *= exp(- 1j * np.dot(k_vec, x0))
-          
+              tilde_xi[cur_index, l_mod_2, m_mod_2, 1] = (-1)**(l_mod_2+m_mod_2) * exp(-1j * np.dot(k_vec, np.dot(M_A_minus_id, x0))) * exp(1j * np.dot(k_vec, T_A)) + (-1)**m_mod_2 * exp(-1j * np.dot(k_vec, np.dot(M_B_minus_id, x0))) * exp(1j * np.dot(k_vec, T_B))
+          tilde_xi[cur_index, :, :, :] *= exp(- 1j * np.dot(k_vec, x0))/2
+          #print(np.sum(tilde_xi[cur_index, 0, 0, :]), tilde_xi[cur_index, 0, 0, 0], tilde_xi[cur_index, 0, 0, 1], n_x, n_y, n_z, )
           cur_index += 1
-    k_amp = k_amp[:cur_index-1]
-    phi = phi[:cur_index-1]   
-    theta = theta[:cur_index-1]
-    tilde_xi = tilde_xi[:cur_index-1, :, :, :]
+    k_amp = k_amp[:cur_index]
+    phi = phi[:cur_index]   
+    theta = theta[:cur_index]
+    tilde_xi = tilde_xi[:cur_index, :, :, :]
 
     print(cur_index, eigenmode_index_split, 'split')
     print('Final num of elements:', k_amp.size, 'Minimum k_amp', np.amin(k_amp), 'n_x_max', n_x_max, 'n_z_max', n_z_max)
     return k_amp, phi, theta, tilde_xi, eigenmode_index_split
-
-@njit(fastmath=True)
-def get_alm_per_process_numba(
-    min_index,
-    max_index,
-    k_amp,
-    phi,
-    k_amp_unique_index,
-    theta_unique_index,
-    k_max_list,
-    l_max,
-    lm_index,
-    sph_harm_no_phase,
-    delta_k_n,
-    transfer_delta_kl,
-    tilde_xi,
-    eigenmode_index_split
-): 
-    # This function returns parts of the summation over wavenumber k to get a_lm
-    num_l_m = int((l_max + 1)*(l_max + 2)/2)
-    a_lm = np.zeros(num_l_m, dtype=np.complex128)
-    for i in range(min_index, max_index):
-      k_amp_cur = k_amp[i]
-      k_unique_index_cur = k_amp_unique_index[i]
-      sph_harm_index = theta_unique_index[i]
-      m_list = np.arange(0, l_max+1)
-      phase_list = np.exp(-1j * phi[i] * m_list)
-
-      random_delta_k_n = np.random.normal(loc=0, scale = delta_k_n[k_unique_index_cur])
-      uniform = np.random.uniform(0.0, np.pi*2)
-      random_delta_k_n *= np.exp(1j * uniform)
-
-      cur_tilde_xi = tilde_xi[i, :, :, :]
-
-      for l in range(2, l_max+1):
-          if k_amp_cur > k_max_list[l]:
-              continue
-          delta_k_n_mul_transfer = random_delta_k_n * transfer_delta_kl[k_unique_index_cur, l]
-          for m in range(l+1):
-              lm_index_cur = lm_index[l, m]
-              
-              if i <= eigenmode_index_split:
-                xi = sph_harm_no_phase[sph_harm_index, lm_index_cur] * phase_list[m] * cur_tilde_xi[l%2, m%2, 0]
-              else:
-                xi = sph_harm_no_phase[sph_harm_index, lm_index_cur] * (phase_list[m] * cur_tilde_xi[l%2, m%2, 0] + np.conjugate(phase_list[m]) * cur_tilde_xi[l%2, m%2, 1])
-
-              a_lm[lm_index_cur] += delta_k_n_mul_transfer * xi
-
-    return a_lm
 
 @njit(nogil=True, parallel=False, fastmath=True)
 def get_c_lmlpmp(
@@ -405,6 +400,7 @@ def get_c_lmlpmp(
     tilde_xi,
     eigenmode_index_split,
     no_shift,
+    sph_harm_no_phase_theta_0_pi_over_2,
     progress
     ):
 
@@ -426,28 +422,33 @@ def get_c_lmlpmp(
       m_list = np.arange(-l_max, l_max+1)
       phase_list = np.exp(1j * phi[i] * m_list)
 
-      cur_tilde_xi = tilde_xi[i, :]
+      cur_tilde_xi = tilde_xi[i, :, :, :]
 
       # Powers of i so we can get them as an array call instead of recalculating them every time.
       # 1j**n == ipow[n%4], even for n<0.
       ipow = 1j**np.arange(4)
 
       for l in range(ell_range[0], ell_range[1]+1):
-        start_lp = 0#l%2 if no_shift else 0
-        lp_step = 1# if no_shift else 1
         for m in range(-l, l + 1):
             lm_index_cur = l * (l+1) + m - ell_range[0]**2
             sph_cur_index = lm_index[l, np.abs(m)]
 
-            if i <= eigenmode_index_split:
+            if i <= eigenmode_index_split[0]:
               # xi depends on Y^*
               # xi^* depends on Y
-              xi_lm = sph_harm_no_phase[sph_harm_index, sph_cur_index] * phase_list[-m + l_max] * cur_tilde_xi[l%2, m%2, 0]
+              xi_lm = sph_harm_no_phase_theta_0_pi_over_2[1, sph_cur_index] * cur_tilde_xi[l%2, m%2, 0]
+            elif i <= eigenmode_index_split[1]:
+              xi_lm = sph_harm_no_phase_theta_0_pi_over_2[1, sph_cur_index] * exp(-1j * m * pi/2) * cur_tilde_xi[l%2, m%2, 0]
+            elif i <= eigenmode_index_split[2]:
+              if m == 0:
+                xi_lm = sph_harm_no_phase_theta_0_pi_over_2[0, sph_cur_index] * cur_tilde_xi[l%2, m%2, 0]
+              else:
+                xi_lm = 0
             else:
               xi_lm = sph_harm_no_phase[sph_harm_index, sph_cur_index] * (phase_list[-m + l_max] * cur_tilde_xi[l%2, m%2, 0] + phase_list[m + l_max] * cur_tilde_xi[l%2, m%2, 1])
             
             #for l_p in range(ell_p_range[0], ell_p_range[1]+1):
-            for l_p in range(start_lp + ell_p_range[0], ell_p_range[1]+1, lp_step):
+            for l_p in range(ell_p_range[0], ell_p_range[1]+1):
               if k_amp_cur > np.sqrt(k_max_list[l]*k_max_list[l_p]):
                 continue
               integrand_il = integrand[k_unique_index_cur, l, l_p] * ipow[(l-l_p)%4]
@@ -456,12 +457,19 @@ def get_c_lmlpmp(
                   lm_p_index_cur = l_p * (l_p + 1) + m_p - ell_p_range[0]**2
                   sph_p_cur_index = lm_index[l_p, np.abs(m_p)]
 
-                  if i <= eigenmode_index_split:
+                  if i <= eigenmode_index_split[0]:
                     # xi depends on Y^*
                     # xi^* depends on Y
-                    xi_lm_p_conj = sph_harm_no_phase[sph_harm_index, sph_p_cur_index] * phase_list[-m + l_max] * cur_tilde_xi[l%2, m%2, 0]
+                    xi_lm_p_conj = sph_harm_no_phase_theta_0_pi_over_2[1, sph_p_cur_index] * cur_tilde_xi[l_p%2, m_p%2, 0]
+                  elif i <= eigenmode_index_split[1]:
+                    xi_lm_p_conj = sph_harm_no_phase_theta_0_pi_over_2[1, sph_p_cur_index] * exp(-1j * m_p * pi/2) * cur_tilde_xi[l_p%2, m_p%2, 0]
+                  elif i <= eigenmode_index_split[2]:
+                    if m == 0:
+                      xi_lm_p_conj = sph_harm_no_phase_theta_0_pi_over_2[0, sph_p_cur_index] * cur_tilde_xi[l_p%2, m_p%2, 0]
+                    else:
+                      xi_lm_p_conj = 0
                   else:
-                    xi_lm_p_conj = sph_harm_no_phase[sph_harm_index, sph_p_cur_index] * (phase_list[-m + l_max] * cur_tilde_xi[l%2, m%2, 0] + phase_list[m + l_max] * cur_tilde_xi[l%2, m%2, 1])
+                    xi_lm_p_conj = sph_harm_no_phase[sph_harm_index, sph_p_cur_index] * (phase_list[-m_p + l_max] * cur_tilde_xi[l_p%2, m_p%2, 0] + phase_list[m_p + l_max] * cur_tilde_xi[l_p%2, m_p%2, 1])
 
                   xi_lm_p_conj = np.conjugate(xi_lm_p_conj)
 
@@ -487,6 +495,7 @@ def get_c_lmlpmp_diag(
     ell_range,
     tilde_xi,
     eigenmode_index_split,
+    sph_harm_no_phase_theta_0_pi_over_2,
     progress
     ):
 
@@ -504,7 +513,7 @@ def get_c_lmlpmp_diag(
       k_amp_cur = k_amp[i]
       k_unique_index_cur = k_amp_unique_index[i]
       sph_harm_index = theta_unique_index[i]
-      cur_tilde_xi = tilde_xi[i, :]
+      cur_tilde_xi = tilde_xi[i, :, :, :]
       m_list = np.arange(-l_max, l_max+1)
       phase_list = np.exp(1j * phi[i] * m_list)
 
@@ -516,10 +525,17 @@ def get_c_lmlpmp_diag(
             lm_index_cur = l * (l+1) + m
             sph_cur_index = lm_index[l, np.abs(m)]
 
-            if i <= eigenmode_index_split:
+            if i <= eigenmode_index_split[0]:
               # xi depends on Y^*
               # xi^* depends on Y
-              xi_lm = sph_harm_no_phase[sph_harm_index, sph_cur_index] * phase_list[-m + l_max] * cur_tilde_xi[l%2, m%2, 0]
+              xi_lm = sph_harm_no_phase_theta_0_pi_over_2[1, sph_cur_index] * cur_tilde_xi[l%2, m%2, 0]
+            elif i <= eigenmode_index_split[1]:
+              xi_lm = sph_harm_no_phase_theta_0_pi_over_2[1, sph_cur_index] * exp(-1j * m * pi/2) * cur_tilde_xi[l%2, m%2, 0]
+            elif i <= eigenmode_index_split[2]:
+              if m == 0:
+                xi_lm = sph_harm_no_phase_theta_0_pi_over_2[0, sph_cur_index] * cur_tilde_xi[l%2, m%2, 0]
+              else:
+                xi_lm = 0
             else:
               xi_lm = sph_harm_no_phase[sph_harm_index, sph_cur_index] * (phase_list[-m + l_max] * cur_tilde_xi[l%2, m%2, 0] + phase_list[m + l_max] * cur_tilde_xi[l%2, m%2, 1])
 

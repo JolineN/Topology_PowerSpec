@@ -15,7 +15,6 @@ class E1(Topology):
     self.beta = param['beta'] * np.pi / 180
     self.V = self.Lx * self.Ly * self.Lz * sin(self.beta) * sin(self.alpha)
     self.l_max = param['l_max']
-    self.number_of_a_lm_realizations = param['number_of_a_lm_realizations']
 
     self.param = param
 
@@ -55,7 +54,7 @@ class E1(Topology):
       sph_harm_no_phase,
       delta_k_n,
       transfer_delta_kl,
-      iteration
+      random_phase
   ):
       # This function seems unnecessary, but Numba does not allow return_dict
       # which is of type multiprocessing.Manager
@@ -72,7 +71,7 @@ class E1(Topology):
           sph_harm_no_phase,
           delta_k_n,
           transfer_delta_kl,
-          random_phase = self.random_phase[:, iteration]
+          random_phase
       )
 
   def get_c_lmlpmp_per_process(
@@ -217,7 +216,7 @@ def get_list_of_k_phi_theta(k_max, L_x, L_y, L_z, beta, alpha, number_of_a_lm_re
     num_alm_real = number_of_a_lm_realizations if number_of_a_lm_realizations>=1 else 1
     random_phase = np.zeros((n_x_max * n_y_max * n_z_max * 8, num_alm_real), dtype=np.complex128)
     if number_of_a_lm_realizations >= 1:
-      random_phase_index = -1 * np.ones((2 * n_x_max, 2 * n_y_max, 2 * n_z_max), dtype=np.intc)
+      random_phase_index = -1 * np.ones((2 * n_x_max+1, 2 * n_y_max+1, 2 * n_z_max+1), dtype=np.intc)
 
     cur_index = 0
 
@@ -244,22 +243,27 @@ def get_list_of_k_phi_theta(k_max, L_x, L_y, L_z, beta, alpha, number_of_a_lm_re
           theta[cur_index] = cur_theta
 
           if number_of_a_lm_realizations >= 1:
+            # Find opposite phase index (-k)
+            
             opposite_phase_index = random_phase_index[-n_x + n_x_max, -n_y + n_y_max, -n_z + n_z_max]
+
             if opposite_phase_index == -1:
               # Phase has not been set for -vec(k), so we set it here
               for i in range(number_of_a_lm_realizations):
-                random_phase[cur_index, i] = np.exp(1j*np.random.uniform(0.0, np.pi*2)) * np.random.normal(loc=0.0, scale=1.0)
+                random_phase[cur_index, i] = np.random.normal(loc=0.0, scale=1/sqrt(2)) + 1j*np.random.normal(loc=0.0, scale=1/sqrt(2))
+                #random_phase[cur_index, i] = np.exp(1j*np.random.uniform(0.0, np.pi*2)) * np.random.normal(loc=0.0, scale=1.0)
               random_phase_index[n_x + n_x_max, n_y + n_y_max, n_z + n_z_max] = cur_index
             else:
               # Phase has been set for -vec(k), so we set the phase for k to be minus this
               random_phase[cur_index, :] = np.conjugate(random_phase[opposite_phase_index, :])
-
+              random_phase_index[n_x + n_x_max, n_y + n_y_max, n_z + n_z_max] = cur_index
+            
           cur_index += 1
-
-    k_amp = k_amp[:cur_index-1]
-    phi = phi[:cur_index-1]   
-    theta = theta[:cur_index-1]
-    random_phase = random_phase[:cur_index-1, :]
+    
+    k_amp = k_amp[:cur_index]
+    phi = phi[:cur_index]   
+    theta = theta[:cur_index]
+    random_phase = random_phase[:cur_index, :]
 
     print('Final num of elements:', k_amp.size, 'Minimum k_amp', np.amin(k_amp), 'n_x_max', n_x_max, 'n_z_max', n_z_max)
     return k_amp, phi, theta, random_phase
@@ -305,7 +309,7 @@ def get_alm_per_process_numba(
               sph_harm = phase_list[m] * sph_harm_no_phase[sph_harm_index, lm_index_cur]
 
               a_lm[lm_index_cur] += delta_k_n_mul_transfer * sph_harm
-
+    
     return a_lm
 
 @njit(nogil=True, parallel = False)

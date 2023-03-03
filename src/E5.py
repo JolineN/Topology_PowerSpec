@@ -143,25 +143,25 @@ class E5(Topology):
     ]
     M_0j[2, :, :]= [
       [3/2,        sqrt(3)/2, 0],
-      [-sqrt(3)/2, 3/2,         0],
+      [-sqrt(3)/2, 3/2,       0],
       [0,          0,         2]
     ]
     M_0j[3, :, :]= [
-      [1,        sqrt(3), 0],
-      [-sqrt(3), 1,         0],
+      [1,          sqrt(3),   0],
+      [-sqrt(3),   1,         0],
       [0,          0,         3]
     ]
 
     M_0j[4, :, :]= [
-      [0,        sqrt(3), 0],
-      [-sqrt(3), 0,         0],
+      [0,          sqrt(3),   0],
+      [-sqrt(3),   0,         0],
       [0,          0,         4]
     ]
 
     M_0j[5, :, :] = [
-      [0, 0, 0],
-      [0, 0, 0],
-      [0, 0, 6]
+      [-1/2,        sqrt(3)/2, 0],
+      [-sqrt(3)/2,  -1/2,      0],
+      [0,           0,         5]
     ]
 
     k_amp, phi, theta, tilde_xi = get_list_of_k_phi_theta(
@@ -207,13 +207,13 @@ def get_list_of_k_phi_theta(k_max, L_12, L_z, x0, beta, M_B_j_minus_identity, M_
 
     n_x_max = int(np.ceil(k_max * L_12 / (2*pi)))
     n_y_max = int(np.ceil(k_max * L_12 / (2*pi)))
-    n_z_max = int(np.ceil(k_max * L_z * 3 / (2*pi))) # Because of eigenmode 1
+    n_z_max = int(np.ceil(k_max * L_z * 6 / (2*pi))) # Because of eigenmode 1
  
     k_amp = np.zeros(n_x_max * n_y_max * n_z_max * 8)
     phi = np.zeros(n_x_max * n_y_max * n_z_max * 8)
     theta = np.zeros(n_x_max * n_y_max * n_z_max * 8)
 
-    tilde_xi = np.zeros((n_x_max * n_y_max * n_z_max * 8, 3), dtype=np.complex128)
+    tilde_xi = np.zeros((n_x_max * n_y_max * n_z_max * 8, 6), dtype=np.complex128)
 
     T_B = L_z * np.array([cos(beta), 0, sin(beta)])
 
@@ -238,12 +238,12 @@ def get_list_of_k_phi_theta(k_max, L_12, L_z, x0, beta, M_B_j_minus_identity, M_
       tilde_xi[cur_index, :] = exp(- 1j * k_z * x0[2])
       cur_index += 1
     print(cur_index)
+
     # Eigenmode 2
-    for n_x in range(0, n_x_max+1):
+    for n_x in range(1, n_x_max+1):
       k_x = 2*pi * n_x / L_12
-      for n_y in range(1, n_y_max+1):
-        if n_x >= n_y:
-          continue
+      for n_y in range(0, n_y_max+1):
+
         k_y = 4*pi * n_y / (sqrt(3)*L_12) + k_x/np.sqrt(3)
 
         k_xy_squared = k_x**2 + k_y**2
@@ -251,7 +251,7 @@ def get_list_of_k_phi_theta(k_max, L_12, L_z, x0, beta, M_B_j_minus_identity, M_
           continue
         
         for n_z in range(-n_z_max, n_z_max+1):
-          k_z = 2*pi * n_z * sin_b_inv / (3*L_z * sin(beta))
+          k_z = 2*pi * n_z * sin_b_inv / (6 * L_z)
           
           k_xyz = sqrt(k_xy_squared + k_z**2)
 
@@ -271,11 +271,11 @@ def get_list_of_k_phi_theta(k_max, L_12, L_z, x0, beta, M_B_j_minus_identity, M_
           for m_mod_6 in range(6):
             tilde_xi[cur_index, m_mod_6] = np.sum(exp(1j * m_mod_6 * np.arange(6) * np.pi/3) * j_contribution)
           tilde_xi[cur_index, :] *= exp(- 1j * np.dot(k_vec, x0))/sqrt(6) 
-          
+
           cur_index += 1
-    k_amp = k_amp[:cur_index-1]
-    phi = phi[:cur_index-1]   
-    theta = theta[:cur_index-1]
-    tilde_xi = tilde_xi[:cur_index-1, :]
+    k_amp = k_amp[:cur_index]
+    phi = phi[:cur_index]   
+    theta = theta[:cur_index]
+    tilde_xi = tilde_xi[:cur_index, :]
     print('Final num of elements:', k_amp.size, 'Minimum k_amp', np.amin(k_amp), 'n_x_max', n_x_max, 'n_z_max', n_z_max)
     return k_amp, phi, theta, tilde_xi
