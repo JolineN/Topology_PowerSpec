@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # CMB_Topology
 
 To run the code, do 
