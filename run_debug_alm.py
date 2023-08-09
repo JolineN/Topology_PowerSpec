@@ -14,18 +14,17 @@ import numpy as np
 #import parameter_files.default as parameter_file
 import parameter_files.default_E1 as parameter_file
 
-L_circle = np.sqrt(1-0.7**2)
 param = parameter_file.parameter
 param['topology'] = 'E1'
-param['Lx'] = 1
-param['Ly'] = 1
-param['Lz'] = 1
-param['l_max'] = 30
-param['beta'] = 90
-param['alpha'] = 90
-param['gamma'] = 0
+param['Lx'] = 0.4
+param['Ly'] = 0.4
+param['Lz'] = 0.4
+param['beta'] = 90.0
+param['alpha'] = 90.0
+param['gamma'] = 0.0
+param['l_max'] = 200
 param['x0'] = np.array([0, 0, 0], dtype=np.float64)
-param['number_of_a_lm_realizations'] = 1
+param['number_of_a_lm_realizations'] = 2
 
 if param['topology'] == 'E1':
   a = E1(param=param, make_run_folder=True)
@@ -45,25 +44,9 @@ else:
   exit()
 
 # Create 2 realizations
-c_l_a = a.make_alm_realizations(plot_alm=True, save_alm = False)
-#print(c_l_a.shape)
-# Calculate the diagonal covariance matrix
+_, c_l_a = a.make_alm_realizations(plot_alm=True, save_alm = True)
+print(c_l_a.shape)
 a.calculate_c_lmlpmp(
   only_diag=True
 )
-
-# Plot the diagonal power spectrum and the realizations
-# Good to see if there are any obvious bugs
-a.plot_c_l_and_realizations(c_l_a=None)
-
-_, norm_c = a.calculate_c_lmlpmp(
-  only_diag=False,
-  normalize=True,
-  save_cov = True,
-  plot_param={
-    'l_ranges': np.array([[2, 10]]),
-    'lp_ranges': np.array([[2, 10]]),
-  }
-)
-cur_kl, _, _ = a.calculate_exact_kl_divergence()
-print('KL:', cur_kl)
+a.plot_c_l_and_realizations(c_l_a=c_l_a, plot_average_real=True)

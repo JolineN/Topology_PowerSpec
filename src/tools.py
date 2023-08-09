@@ -91,13 +91,15 @@ def get_c_l_from_a_lm(a_lm, l_max):
 @njit
 def get_c_l_from_c_lmlpmp(c_lmlpmp, l_max):
     c_l = np.zeros(l_max+1, dtype=np.complex128)
-    for l in range(l_max+1):
+
+    one_dim = c_lmlpmp.ndim == 1
+    for l in range(2, l_max+1):
         for m in range(-l, l+1):
-            lm_id = l * (l+1) + m
-            
-            if c_lmlpmp.ndim == 1:
+            if one_dim:
+                lm_id = l * (l+1) + m
                 c_l[l] += c_lmlpmp[lm_id]
             else:
+                lm_id = l * (l+1) + m - 2**2
                 c_l[l] += c_lmlpmp[lm_id, lm_id]
         c_l[l] /= 2*l + 1
     return np.real(c_l)

@@ -225,6 +225,7 @@ class Topology:
             print('Time to calculate C_TT with l_max={} and c_l_ratio={}:'.format(l_max, self.c_l_accuracy), time.time()-time_start, 'seconds with Numba')            
             
             self.C_TT_diag = get_c_l_from_c_lmlpmp(C_TT_lmlpmp, self.l_max)
+            np.save(self.root+'C_ell_diag.npy', self.C_TT_diag)
         elif plotting == False:
             ell_range = np.array([2, self.l_max])
             ell_p_range = np.array([2, self.l_max])
@@ -234,6 +235,8 @@ class Topology:
                 ell_p_range = ell_p_range
             )
             self.C_TT_lmlpmp = C_TT_lmlpmp
+        
+            
         else:
             num_plots = plot_param['l_ranges'][:, 0].size
             ell = np.arange(2, self.l_max+1, dtype=np.int32)
@@ -476,9 +479,6 @@ class Topology:
         return kosowsky_list
 
     def make_realization_c_lmlpmp_cholesky(self, number_of_realizations=10000):
-        # THIS CODE SEEMS TO BE BUGGY!
-        # DO NOT TRUST YET
-
         C_TT = self.C_TT_lmlpmp
 
         # Transform C to Tilde(C) in new basis where the elements are
