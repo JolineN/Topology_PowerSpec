@@ -6,7 +6,13 @@ from tqdm import tqdm
 from scipy import special, integrate
 
 
-def test_octopole_planarity(a_lm, rotate=True, N_side=16):
+def run_octopole_quadrupole_alignment_octopole_planarity(a_lm, rotate=True, N_side=16):
+  # This functions returns the octopole planarity t_3
+  # And the normal vector of ell=2 and ell=3 (S_2_coord and S_3_coord)
+
+  # rotate = True rotates a map of N_side to all possible pixels in the northern hemisphere
+  # to find the point where t_3 is max. See https://arxiv.org/abs/astro-ph/0307282
+
   num_alm = a_lm[:, 0].size
   ell_max = hp.Alm.getlmax(a_lm[0, :].size)
   m = np.arange(0, ell_max+1)
@@ -59,9 +65,7 @@ def test_octopole_planarity(a_lm, rotate=True, N_side=16):
           S_3_largest = S_3_cur
 
         if t_3_cur > t_3[i]:
-          t_3[i] = t_3_cur
-      #print(t_3[i])
-          
+          t_3[i] = t_3_cur          
   else:
     a_3m = a_lm[i, indices_ell3]
     sigma_3_times_7 = np.abs(a_3m[0])**2

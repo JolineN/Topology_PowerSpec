@@ -94,7 +94,7 @@ for k, top in enumerate(topology_list):
   a_lm_list, c_l_list = a.make_realization_c_lmlpmp_cholesky(50000)
 
   #S_one_half, C_theta = get_S_one_half(a_lm)
-  t_3, S_2_coords, S_3_coords = test_octopole_planarity(a_lm_list, N_side=16)
+  t_3, S_2_coords, S_3_coords = run_octopole_quadrupole_alignment_octopole_planarity(a_lm_list, N_side=16)
 
   n_2 = np.array([cos(S_2_coords[:, 1])*sin(S_2_coords[:, 0]), sin(S_2_coords[:, 1])*sin(S_2_coords[:, 0]), cos(S_2_coords[:, 0])])
   n_3 = np.array([cos(S_3_coords[:, 1])*sin(S_3_coords[:, 0]), sin(S_3_coords[:, 1])*sin(S_3_coords[:, 0]), cos(S_3_coords[:, 0])])

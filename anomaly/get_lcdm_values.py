@@ -27,7 +27,7 @@ for i in tqdm(range(num_alm)):
   c_ell_realizations[i, :] = hp.alm2cl(a_lm)
 #np.save('LCDM/C_ell_2_{}_LCDM.npy'.format(num_alm), c_ell_realizations[:, 2])
 
-t_3, S_2_coords, S_3_coords = test_octopole_planarity(lcdm_alm_realizations, rotate=True, N_side=16)
+t_3, S_2_coords, S_3_coords = run_octopole_quadrupole_alignment_octopole_planarity(lcdm_alm_realizations, rotate=True, N_side=16)
 
 plt.figure()
 plt.hist(t_3, bins=30)
