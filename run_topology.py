@@ -12,7 +12,7 @@ import numpy as np
 
 # Set parameter file
 #import parameter_files.default as parameter_file
-import parameter_files.default_E2 as parameter_file
+import parameter_files.default_E1 as parameter_file
 param = parameter_file.parameter
 '''
 L_circle = np.sqrt(1-0.7**2)
