@@ -12,8 +12,9 @@ import numpy as np
 
 # Set parameter file
 #import parameter_files.default as parameter_file
-import parameter_files.default_E1 as parameter_file
-
+import parameter_files.default_E2 as parameter_file
+param = parameter_file.parameter
+'''
 L_circle = np.sqrt(1-0.7**2)
 param = parameter_file.parameter
 param['topology'] = 'E1'
@@ -26,6 +27,7 @@ param['alpha'] = 90
 param['gamma'] = 0
 param['x0'] = np.array([0, 0, 0], dtype=np.float64)
 param['number_of_a_lm_realizations'] = 1
+'''
 
 if param['topology'] == 'E1':
   a = E1(param=param, make_run_folder=True)

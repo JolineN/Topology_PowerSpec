@@ -755,7 +755,7 @@ class Topology:
                 sph_harm_no_phase,
                 delta_k_n,
                 transfer_T_delta_kl,
-                self.random_phase[:, iteration]
+                #self.random_phase[:, iteration]
             )
             p = multiprocessing.Process(target=self.get_alm_per_process, args=args)
             jobs.append(p)
