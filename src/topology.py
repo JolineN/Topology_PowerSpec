@@ -24,6 +24,8 @@ class Topology:
         self.l_max = param['l_max']
         self.c_l_accuracy = param['c_l_accuracy']
         self.do_polarization = param['do_polarization']
+        self.A_s = param['A_s']
+        self.n_s = param['n_s']
         self.number_of_a_lm_realizations = param['number_of_a_lm_realizations']
         self.get_initial_kmax_list()
 
@@ -55,10 +57,21 @@ class Topology:
         transfer = data.get_cmb_transfer_data(tp='scalar')
 
         #custom  power spectrum function ( power law with one wavepacket)
-        #to do: find a good way to implement and switch between different funcs
-        #make As ns general params
+        #to do: find a good way to implement and switch between different funcs when its clear which ones we want
         def PK(k, As, ns, amp, freq, wid):
             return As*(k/0.05)**(ns-1)*(1+ np.sin(k*freq)*amp*np.exp(-k**2/wid**2))
+        
+        #exponential cutoff
+        def PK_exp(k, As, ns, kc, alpha):
+            return As*(k/0.05)**(ns-1)*(1-np.exp(-(k/kc)**alpha))
+
+        #logarithmic oscillation model
+        def PK_log(k, As, ns, amp, freq):
+            return As*(k/0.05)**(ns-1)*(1+amp*np.cos(np.log(k/0.05)*freq))
+
+        #logarithmic oscillation model with exp cut off
+        def PK_log2(k, As, ns, amp, freq, wid):
+            return As*(k/0.05)**(ns-1)*(1+amp*np.cos(np.log(k/0.05)*freq)*np.exp(-k**2/wid**2))
 
         #Now we want to obtain the C_ls (power spectrum) again but for a modified initial power spectrum
         pars.set_initial_power_function(PK, args=(2e-9, 0.965,0.9, 2e4, 0.001))

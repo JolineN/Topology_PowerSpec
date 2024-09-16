@@ -20,5 +20,9 @@ parameter = {
   'l_max': 20,                    # Self-explanatory
   'do_polarization': False,
 
+  #POWER SPECTRUM PARAMETERS
+  'A_s': 2e-9,
+  'n_s': 0.965,
+
   'number_of_a_lm_realizations': 1,
 }
