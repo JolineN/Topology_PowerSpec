@@ -54,6 +54,19 @@ class Topology:
         self.powers = results.get_cmb_power_spectra(self.pars, raw_cl=True, CMB_unit='muK')['lensed_scalar']
         transfer = data.get_cmb_transfer_data(tp='scalar')
 
+        #custom  power spectrum function ( power law with one wavepacket)
+        #to do: find a good way to implement and switch between different funcs
+        #make As ns general params
+        def PK(k, As, ns, amp, freq, wid):
+            return As*(k/0.05)**(ns-1)*(1+ np.sin(k*freq)*amp*np.exp(-k**2/wid**2))
+
+        #Now we want to obtain the C_ls (power spectrum) again but for a modified initial power spectrum
+        pars.set_initial_power_function(PK, args=(2e-9, 0.965,0.9, 2e4, 0.001))
+        self.pars = pars #set this here so that the correct pars are taken when calculating scalar_pk_k3
+        results = camb.get_results(self.pars)
+        self.powers_mod = results.get_cmb_power_spectra(self.pars, raw_cl=True, CMB_unit='muK')['lensed_scalar']
+
+
         # To get C_\ell in units of umK, we multiply by 1e6 (K to micro K) and the temperature of the CMB in K
         self.transfer_data = np.array(transfer.delta_p_l_k) * 1e6 * 2.7255
         print('Shape of transfer function from CAMB:', self.transfer_data.shape)
@@ -113,7 +126,7 @@ class Topology:
         self.theta_unique_index = theta_unique_index
 
         # Get P(k) / k^3 for all unique |k| values
-        scalar_pk_k3 = self.pars.scalar_power(k_amp_unique) / k_amp_unique**3
+        scalar_pk_k3 = self.pars.scalar_power(k_amp_unique) / k_amp_unique**3  #this is the modified power spec
 
         # Get the transfer function for all unique |k| values
         start_time = time.time()
@@ -187,8 +200,8 @@ class Topology:
             integrand = 4*pi * self.pars.scalar_power(k_list) * self.transfer_T_interpolate_k_l_list[l](k_list)**2 / k_list
             integrand_EE = 4*pi * self.pars.scalar_power(k_list) * self.transfer_E_interpolate_k_l_list[l](k_list)**2 / k_list
 
-            cumulative_c_l_ratio = scipy.integrate.cumulative_trapezoid(y=integrand, x=k_list) / self.powers[l, 0]
-            cumulative_c_l_EE_ratio = scipy.integrate.cumulative_trapezoid(y=integrand_EE, x=k_list) / self.powers[l, 1]
+            cumulative_c_l_ratio = scipy.integrate.cumulative_trapezoid(y=integrand, x=k_list) / self.powers_mod[l, 0]
+            cumulative_c_l_EE_ratio = scipy.integrate.cumulative_trapezoid(y=integrand_EE, x=k_list) / self.powers_mod[l, 1]
 
             #print(max(cumulative_c_l_EE_ratio), max(scipy.integrate.cumulative_trapezoid(y=integrand_EE, x=k_list)), self.powers[l, 1], l)
             
@@ -286,7 +299,7 @@ class Topology:
                 
                 normalized_clmlpmp = normalize_c_lmlpmp(
                     C_TT_lmlpmp, 
-                    self.powers[:, 0], 
+                    self.powers[:, 0], #normalization see eq 5.5
                     l_min=l_min, 
                     l_max=l_max, 
                     lp_min = lp_min,
@@ -371,7 +384,7 @@ class Topology:
 
         return alm_list, cl_list
 
-    def make_euclidean_realizations(self, plot_alms=False):
+    def make_euclidean_realizations(self, plot_alms=False): 
         it=1000
         l_max = self.l_max
         alm_list = np.zeros((it, int((l_max + 1)*(l_max + 2)/2)), dtype=np.complex128)
@@ -386,7 +399,7 @@ class Topology:
 
         np.save(self.root+'realizations/realizations_L_infty_lmax_{}_num_{}.npy'.format(l_max, it), alm_list)
 
-    def calculate_exact_kl_divergence(self):
+    def calculate_exact_kl_divergence(self): #normalize the E_k cov matrix with the one from E18 to get matrix for KL div calculation
         print('Calculating KL divergence')
 
         c_lmlpmp_ordered = self.calculate_c_lmlpmp(only_diag=False, normalize=False, plotting = False)
@@ -406,7 +419,7 @@ class Topology:
 
         return np.real(kl_P_assuming_Q), np.real(kl_Q_assuming_P), np.real(a_t)
 
-    def sampled_kosowsky_statistics(self, N_s = 400, num_times=1):
+    def sampled_kosowsky_statistics(self, N_s = 400, num_times=1): #not currently used, similar to S/N-ratio
         print('Sampling kosowsky statistics')
         l_max = self.l_max
 
@@ -578,7 +591,7 @@ class Topology:
             c_l[i, :] = hp.sphtfunc.alm2cl(a_lm_real_healpix[i, :])
         print('C_ell', np.mean(c_l, axis=0), np.std(c_l, axis=0))
         print('C_ell diag', self.C_TT_diag[2:])
-        print('C_ell CAMB', self.powers[2:self.l_max+1, 0])
+        print('C_ell CAMB', self.powers[2:self.l_max+1, 0])  #Camb here refers to the lambda cdm one
         #print('a_lm:', corr_alm)
         #print('random vec:', uncorr_alm)
         
@@ -590,11 +603,11 @@ class Topology:
         #plt.savefig(self.root+'realizations/map_L_{}_lmax_{}.pdf'.format(int(self.Lx/1000), self.l_max))
         return a_lm_real_healpix, c_l
 
-    def plot_c_l_and_realizations(self, c_l_a=None, plot_average_real=False):
+    def plot_c_l_and_realizations(self, c_l_a=None, plot_average_real=False): 
         l_min=2
         l_max = self.l_max
         ell = np.arange(l_min, l_max+1)
-        correct_D_l = get_D_l(self.powers[:l_max+1, 0])
+        correct_D_l = get_D_l(self.powers[:l_max+1, 0]) #this one for E18, see eq 5.4
 
         cosmic_variance = np.array([2 * self.powers[l, 0]**2 / (2*l+1) for l in range(self.l_max+1)])
         D_l_cv = get_D_l(sqrt(cosmic_variance))
