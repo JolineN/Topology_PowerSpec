@@ -17,9 +17,15 @@ from itertools import product
 from random import sample
 
 class Topology:
-    def __init__(self, param, debug=True, make_run_folder = True):
-        print('Running', param)
+    def __init__(self, param, powerparam, debug=True, make_run_folder = True):
+        print('Running', param, powerparam)
         self.param = param
+        self.powerparam = powerparam
+        self.powerspec = powerparam['powerspec']
+        self.amp = powerparam['amp']
+        self.location = powerparam['location']
+        self.width = powerparam['width']
+        self.freq = powerparam['freq']
         self.topology = param['topology']
         self.l_max = param['l_max']
         self.c_l_accuracy = param['c_l_accuracy']
@@ -57,7 +63,6 @@ class Topology:
         transfer = data.get_cmb_transfer_data(tp='scalar')
 
         #custom  power spectrum function ( power law with one wavepacket)
-        #to do: find a good way to implement and switch between different funcs when its clear which ones we want
         def PK(k, As, ns, amp, freq, wid):
             return As*(k/0.05)**(ns-1)*(1+ np.sin(k*freq)*amp*np.exp(-k**2/wid**2))
         
@@ -68,13 +73,34 @@ class Topology:
         #logarithmic oscillation model
         def PK_log(k, As, ns, amp, freq):
             return As*(k/0.05)**(ns-1)*(1+amp*np.cos(np.log(k/0.05)*freq))
-
-        #logarithmic oscillation model with exp cut off
-        def PK_log2(k, As, ns, amp, freq, wid):
-            return As*(k/0.05)**(ns-1)*(1+amp*np.cos(np.log(k/0.05)*freq)*np.exp(-k**2/wid**2))
+        
+        #power law+ local peak
+        def PK_local(k, As, ns, amp,center, width):
+            return As*(k/0.05)**(ns-1)*(1+amp*np.exp(-(np.log(k)-np.log(center))**2/(2*width**2)))
+        
+        #power law+ 2 local peak
+        def PK_local2(k, As, ns, amp,center, width, amp2, center2):
+            return As*(k/0.05)**(ns-1)*(1+amp*np.exp(-(np.log(k)-np.log(center))**2/(2*width**2))+amp2*np.exp(-(np.log(k)-np.log(center2))**2/(2*width**2)))
+        
+        #standard power law
+        def PK_pow(k, As, ns):
+            return As*(k/0.05)**(ns-1)
 
         #Now we want to obtain the C_ls (power spectrum) again but for a modified initial power spectrum
-        pars.set_initial_power_function(PK, args=(2e-9, 0.965,0.9, 2e4, 0.001))
+        if self.powerspec == 'powlaw':
+            pars.set_initial_power_function(PK_pow, args=(self.A_s, self.n_s))
+        elif self.powerspec == 'local':
+            pars.set_initial_power_function(PK_local, args=(self.A_s, self.n_s, self.amp, self.location, self.width))
+        elif self.powerspec == 'wavepacket':
+            pars.set_initial_power_function(PK, args=(self.A_s, self.n_s, self.amp, self.freq, self.width))
+        elif self.powerspec == 'logosci':
+            pars.set_initial_power_function(PK_log, args=(self.A_s, self.n_s, self.amp, self.freq))
+        else:
+            pars.set_initial_power_function(PK_pow, args=(self.A_s, self.n_s))
+
+        #pars.set_initial_power_function(PK, args=(self.A_s,self.n_s,0.1, 2e4, 0.001)) #in the limit of planck
+        #pars.set_initial_power_function(PK_exp, args=(self.A_s, self.n_s,0.0001, 3.35))
+
         self.pars = pars #set this here so that the correct pars are taken when calculating scalar_pk_k3
         results = camb.get_results(self.pars)
         self.powers_mod = results.get_cmb_power_spectra(self.pars, raw_cl=True, CMB_unit='muK')['lensed_scalar']
@@ -213,8 +239,8 @@ class Topology:
             integrand = 4*pi * self.pars.scalar_power(k_list) * self.transfer_T_interpolate_k_l_list[l](k_list)**2 / k_list
             integrand_EE = 4*pi * self.pars.scalar_power(k_list) * self.transfer_E_interpolate_k_l_list[l](k_list)**2 / k_list
 
-            cumulative_c_l_ratio = scipy.integrate.cumulative_trapezoid(y=integrand, x=k_list) / self.powers_mod[l, 0]
-            cumulative_c_l_EE_ratio = scipy.integrate.cumulative_trapezoid(y=integrand_EE, x=k_list) / self.powers_mod[l, 1]
+            cumulative_c_l_ratio = scipy.integrate.cumulative_trapezoid(y=integrand, x=k_list) / self.powers[l, 0]
+            cumulative_c_l_EE_ratio = scipy.integrate.cumulative_trapezoid(y=integrand_EE, x=k_list) / self.powers[l, 1]
 
             #print(max(cumulative_c_l_EE_ratio), max(scipy.integrate.cumulative_trapezoid(y=integrand_EE, x=k_list)), self.powers[l, 1], l)
             

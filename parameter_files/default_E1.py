@@ -15,12 +15,12 @@ parameter = {
 
 
   # OTHER PARAMETERS
-  'c_l_accuracy': 0.95,           # Determines what k_max is. Determined by doing the integration up to a k_max
+  'c_l_accuracy': 0.99,           # Determines what k_max is. Determined by doing the integration up to a k_max
                                   # that gives 'c_l_accuracy' times CAMB c_l ouput
   'l_max': 20,                    # Self-explanatory
   'do_polarization': False,
 
-  #POWER SPECTRUM PARAMETERS
+  #GENERAL POWER SPECTRUM PARAMETERS
   'A_s': 2e-9,
   'n_s': 0.965,
 

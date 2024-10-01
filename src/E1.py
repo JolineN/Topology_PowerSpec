@@ -6,7 +6,7 @@ from numba import njit, prange
 from numba_progress import ProgressBar
 
 class E1(Topology):
-  def __init__(self, param, debug=True, make_run_folder = False):
+  def __init__(self, param, powerparam, debug=True, make_run_folder = False):
     L_LSS = 13824.9 * 2
     self.Lx = param['Lx'] * L_LSS
     self.Ly = param['Ly'] * L_LSS
@@ -36,7 +36,7 @@ class E1(Topology):
         int(param['c_l_accuracy']*100)
     )
 
-    Topology.__init__(self, param, debug, make_run_folder)
+    Topology.__init__(self, param,powerparam, debug, make_run_folder)
 
   def get_alm_per_process(
       self,
