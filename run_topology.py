@@ -15,20 +15,31 @@ import numpy as np
 import parameter_files.default_E1 as parameter_file
 param = parameter_file.parameter
 
+#specify the initial power spectrum of the E_k topology (E18 uses the standard power law)
+#available power spec are: powlaw (default), local (amp, location, width), 
+#wavepacket (amp, freq, width), logosci (amp,freq)
+powerparam={
+  'powerspec': 'local',
+  'amp': 1.,
+  'location': 5e-4,
+  'width': 0.03,
+  'freq': 10,
+}
+
 if param['topology'] == 'E1':
-  a = E1(param=param, make_run_folder=True)
+  a = E1(param=param,powerparam=powerparam, make_run_folder=True)
 elif param['topology'] == 'E2':
-  a = E2(param=param, make_run_folder=True)
+  a = E2(param=param,powerparam=powerparam, make_run_folder=True)
 elif param['topology'] == 'E3':
-  a = E3(param=param, make_run_folder=True)
+  a = E3(param=param,powerparam=powerparam, make_run_folder=True)
 elif param['topology'] == 'E4':
-  a = E4(param=param, make_run_folder=True)
+  a = E4(param=param,powerparam=powerparam, make_run_folder=True)
 elif param['topology'] == 'E5':
-  a = E5(param=param, make_run_folder=True)
+  a = E5(param=param,powerparam=powerparam, make_run_folder=True)
 elif param['topology'] == 'E6':
-  a = E6(param=param, make_run_folder=True)
+  a = E6(param=param,powerparam=powerparam, make_run_folder=True)
 elif param['topology'] == 'E7':
-  a = E7(param=param, make_run_folder=True)
+  a = E7(param=param,powerparam=powerparam, make_run_folder=True)
 else:
   exit()
 
