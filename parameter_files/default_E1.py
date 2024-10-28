@@ -4,14 +4,12 @@ import numpy as np
 parameter = {
   # TOPOLOGY PARAMETERS
   'topology': 'E1',               # Self-explanatory
-  'Lx': 1.0,                     # In diameter of LSS
-  'Ly': 1.0,                     # In diameter of LSS
-  'Lz': 1.0,                     # In diameter of LSS
+  'Lx': 1.15,                     # In diameter of LSS
+  'Ly': 1.15,                     # In diameter of LSS
+  'Lz': 1.15,                     # In diameter of LSS
 
-  'x0': np.array([0,0,0], dtype=np.float64),
   'beta': 90,
   'alpha': 90,
-  'gamma': 0,
 
 
   # OTHER PARAMETERS

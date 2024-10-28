@@ -28,6 +28,8 @@ class Topology:
         self.freq = powerparam['freq']
         self.k_cutoff = powerparam['k_cutoff']
         self.alpha_cutoff = powerparam['alpha_cutoff']
+        self.pow_min = powerparam['pow_min']
+        self.pow_max = powerparam['pow_max']
         self.topology = param['topology']
         self.l_max = param['l_max']
         self.c_l_accuracy = param['c_l_accuracy']
@@ -87,10 +89,48 @@ class Topology:
         #standard power law
         def PK_pow(k, As, ns):
             return As*(k/0.05)**(ns-1)
+        
+        #standard power law but moving a part of the spectrum up/down
+        def PK_pow_mov(k, As, ns, amp, kmin, kmax, sigma):
+            # Compute P for all k values (unshifted)
+            P = As * (k / 0.05) ** (ns - 1)
 
+            # Fully shifted version
+            P_shifted = P * (1 + amp)
+
+            # Logarithmic values for the smoothing transition
+            log_k = np.log(k)
+            log_kmin = np.log(kmin)
+            log_kmax = np.log(kmax)
+
+            # Midpoints for transitions in log-space
+            log_k_mid_min = log_kmin
+            log_k_mid_max = log_kmax
+
+            # Gaussian smoothing only at the boundaries around kmin and kmax
+            gaussian_min = np.exp(-((log_k - log_k_mid_min) ** 2) / (2 * sigma ** 2))
+            gaussian_max = np.exp(-((log_k - log_k_mid_max) ** 2) / (2 * sigma ** 2))
+
+            # Smooth transition near kmin (from unshifted to shifted)
+            mask_min = (k >= (kmin - sigma)) & (k < kmin)
+            P[mask_min] = P[mask_min] * (1 - gaussian_min[mask_min]) + P_shifted[mask_min] * gaussian_min[mask_min]
+
+            # Use fully shifted values between kmin and kmax
+            P[(k >= kmin) & (k <= kmax)] = P_shifted[(k >= kmin) & (k <= kmax)]
+
+            # Smooth transition near kmax (from shifted back to unshifted)
+            mask_max = (k > kmax) & (k <= (kmax + sigma))
+            P[mask_max] = P_shifted[mask_max] * gaussian_max[mask_max] + P[mask_max] * (1 - gaussian_max[mask_max])
+
+            # For k > kmax + sigma, revert back to unshifted values
+            P[k > (kmax + sigma)] = P[k > (kmax + sigma)]
+            
+            return P
         #Now we want to obtain the C_ls (power spectrum) again but for a modified initial power spectrum
         if self.powerspec == 'powlaw':
             pars.set_initial_power_function(PK_pow, args=(self.A_s, self.n_s))
+        elif self.powerspec == 'powlaw_mov':
+            pars.set_initial_power_function(PK_pow_mov, args=(self.A_s, self.n_s, self.amp, self.pow_min, self.pow_max, self.width))
         elif self.powerspec == 'local':
             pars.set_initial_power_function(PK_local, args=(self.A_s, self.n_s, self.amp, self.location, self.width))
         elif self.powerspec == 'wavepacket':
@@ -101,9 +141,6 @@ class Topology:
             pars.set_initial_power_function(PK_exp, args=(self.A_s, self.n_s, self.k_cutoff, self.alpha_cutoff))
         else:
             pars.set_initial_power_function(PK_pow, args=(self.A_s, self.n_s))
-
-        #pars.set_initial_power_function(PK, args=(self.A_s,self.n_s,0.1, 2e4, 0.001)) #in the limit of planck
-        #pars.set_initial_power_function(PK_exp, args=(self.A_s, self.n_s,0.0001, 3.35))
 
         self.pars = pars #set this here so that the correct pars are taken when calculating scalar_pk_k3
         results = camb.get_results(self.pars)
@@ -349,9 +386,10 @@ class Topology:
                     lp_max = lp_max,
                     cl_accuracy = self.c_l_accuracy)
 
-                np.save(self.root+'corr_matrix_l_{}_{}_lp_{}_{}.npy'.format(
+                np.save(self.root+'corr_matrix_l_{}_{}_lp_{}_{}_{}_{}_{}.npy'.format(
                     l_min, l_max,
                     lp_min, lp_max,
+                    plot_param['powerspec'], plot_param['amplitude'], plot_param['k_value'],
                 ), normalized_clmlpmp)
                 
                 im = self.do_cov_sub_plot(ax, normalize, i, C_TT_lmlpmp, ell_range, ell_p_range)
@@ -362,7 +400,7 @@ class Topology:
             fig.subplots_adjust(hspace=.4, wspace=-0.1)
             #fig.tight_layout()
             plt.savefig(
-                self.root+'figs/c_tt_offdiagonal_{}.pdf'.format('high_ell' if ell_range[1]>50 or ell_p_range[1]> 50 else 'low_ell'),
+                self.root+'figs/c_tt_offdiagonal_{}_{}_{}_{}.pdf'.format('high_ell' if ell_range[1]>50 or ell_p_range[1]> 50 else 'low_ell', plot_param['powerspec'], plot_param['amplitude'], plot_param['k_value'],),
                 bbox_inches='tight')
             self.C_TT_lmlpmp = C_TT_lmlpmp
         if save_cov == True and num_plots == 1:
@@ -588,7 +626,7 @@ class Topology:
                         # C might have an imaginary part due to minor numerical error
                         Tilde_C[i_block+i-l, j_block+j-lp] = np.real(C)
         
-        print(Tilde_C)
+        #print(Tilde_C)
         plt.figure()
         plt.imshow(np.abs(Tilde_C), cmap='inferno', norm=LogNorm(), origin='lower', interpolation = 'nearest')
         plt.colorbar()
@@ -620,7 +658,7 @@ class Topology:
         list_realizations = np.zeros((num_real, num_alm), dtype=np.complex128)
         c_l = np.zeros((num_real, self.l_max+1))
         a_lm_real_healpix = np.zeros((num_real, hp.Alm.getsize(self.l_max)), dtype=np.complex128)
-        print(a_lm_real_healpix.shape)
+        #print(a_lm_real_healpix.shape)
         for i in tqdm(range(num_real)):
             uncorr_alm = np.random.normal(size = num_alm)
             corr_alm = np.dot(Q, np.dot(Tilde_L, uncorr_alm))
@@ -632,7 +670,7 @@ class Topology:
                 a_lm_real_healpix[i, idx] = corr_alm[l * (l + 1) - 2**2 + m]
 
             c_l[i, :] = hp.sphtfunc.alm2cl(a_lm_real_healpix[i, :])
-        print('C_ell', np.mean(c_l, axis=0), np.std(c_l, axis=0))
+        #print('C_ell', np.mean(c_l, axis=0), np.std(c_l, axis=0))
         print('C_ell diag', self.C_TT_diag[2:])
         print('C_ell CAMB', self.powers[2:self.l_max+1, 0])  #Camb here refers to the lambda cdm one
         #print('a_lm:', corr_alm)

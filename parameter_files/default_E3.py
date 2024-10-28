@@ -4,9 +4,9 @@ import numpy as np
 parameter = {
   # TOPOLOGY PARAMETERS
   'topology': 'E3',              # Self-explanatory
-  'Lx': 1,                     # In diameter of LSS
-  'Ly': 1,                     # In diameter of LSS
-  'Lz': 1,                     # In diameter of LSS
+  'Lx': 0.9,                     # In diameter of LSS
+  'Ly': 0.9,                     # In diameter of LSS
+  'Lz': 0.9,                     # In diameter of LSS
 
   'x0': np.array([0,0,0], dtype=np.float64),
   'beta': 90,
@@ -25,4 +25,5 @@ parameter = {
   'n_s': 0.965,
 
   'number_of_a_lm_realizations': 1,
+
 }

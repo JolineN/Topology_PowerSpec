@@ -1,8 +1,0 @@
-No shift: True
-Running {'topology': 'E3', 'Lx': 1, 'Ly': 1, 'Lz': 1, 'x0': array([0., 0., 0.]), 'beta': 90, 'alpha': 90, 'gamma': 0, 'c_l_accuracy': 0.99, 'l_max': 20, 'do_polarization': False, 'A_s': 2e-09, 'n_s': 0.965, 'number_of_a_lm_realizations': 1}
-Shape of transfer function from CAMB: (3, 169, 2853)
-
-Finding k_max as a function of ell
-  0%|          | 0/19 [00:00<?, ?it/s] 11%|█         | 2/19 [00:00<00:00, 18.48it/s] 26%|██▋       | 5/19 [00:00<00:00, 23.80it/s] 42%|████▏     | 8/19 [00:00<00:00, 25.50it/s] 58%|█████▊    | 11/19 [00:00<00:00, 26.19it/s] 74%|███████▎  | 14/19 [00:00<00:00, 26.66it/s] 89%|████████▉ | 17/19 [00:00<00:00, 26.90it/s]100%|██████████| 19/19 [00:00<00:00, 26.08it/s]
-/var/spool/slurm/d/job47705/slurm_script: line 9: 210760 Killed                  python run_topology.py
-slurmstepd: error: Detected 1 oom-kill event(s) in StepId=47705.batch cgroup. Some of your processes may have been killed by the cgroup out-of-memory handler.

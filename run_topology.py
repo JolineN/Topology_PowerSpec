@@ -19,11 +19,15 @@ param = parameter_file.parameter
 #available power spec are: powlaw (default), local (amp, location, width), 
 #wavepacket (amp, freq, width), logosci (amp,freq)
 powerparam={
-  'powerspec': 'local',
+  'powerspec': 'powlaw',
   'amp': 1.,
-  'location': 5e-4,
-  'width': 0.03,
+  'pow_min': 3.7e-4,
+  'pow_max': 5.7e-4,
+  'location': 4.5e-4,
+  'width': 0.05,
   'freq': 10,
+  'k_cutoff': 0.001,
+  'alpha_cutoff': 3.,
 }
 
 if param['topology'] == 'E1':
@@ -42,27 +46,19 @@ elif param['topology'] == 'E7':
   a = E7(param=param,powerparam=powerparam, make_run_folder=True)
 else:
   exit()
-
-# Create 2 realizations
-c_l_a = a.make_alm_realizations(plot_alm=True, save_alm = False)
-#print(c_l_a.shape)
-# Calculate the diagonal covariance matrix
-a.calculate_c_lmlpmp(
-  only_diag=True
+    
+_, _ = a.calculate_c_lmlpmp(
+only_diag=False,
+normalize=True,
+save_cov = True,
+plot_param={
+  'l_ranges': np.array([[2, 20]]),
+  'lp_ranges': np.array([[2, 20]]),
+  'powerspec': 'powlaw',
+  'amplitude': 0,
+  'k_value': 0,
+}
 )
 
-# Plot the diagonal power spectrum and the realizations
-# Good to see if there are any obvious bugs
-a.plot_c_l_and_realizations(c_l_a=None)
-
-_, norm_c = a.calculate_c_lmlpmp(
-  only_diag=False,
-  normalize=True,
-  save_cov = True,
-  plot_param={
-    'l_ranges': np.array([[2, 10]]),
-    'lp_ranges': np.array([[2, 10]]),
-  }
-)
-cur_kl, _, _ = a.calculate_exact_kl_divergence()
-print('KL:', cur_kl)
+forward_kl, backward_kl, _ = a.calculate_exact_kl_divergence()
+print('KL:', forward_kl, backward_kl)
