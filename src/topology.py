@@ -26,6 +26,8 @@ class Topology:
         self.location = powerparam['location']
         self.width = powerparam['width']
         self.freq = powerparam['freq']
+        self.k_cutoff = powerparam['k_cutoff']
+        self.alpha_cutoff = powerparam['alpha_cutoff']
         self.topology = param['topology']
         self.l_max = param['l_max']
         self.c_l_accuracy = param['c_l_accuracy']
@@ -67,8 +69,8 @@ class Topology:
             return As*(k/0.05)**(ns-1)*(1+ np.sin(k*freq)*amp*np.exp(-k**2/wid**2))
         
         #exponential cutoff
-        def PK_exp(k, As, ns, kc, alpha):
-            return As*(k/0.05)**(ns-1)*(1-np.exp(-(k/kc)**alpha))
+        def PK_exp(k, As, ns, kc, alph):
+            return As*(k/0.05)**(ns-1)*(1-np.exp(-(k/kc)**alph))
 
         #logarithmic oscillation model
         def PK_log(k, As, ns, amp, freq):
@@ -95,6 +97,8 @@ class Topology:
             pars.set_initial_power_function(PK, args=(self.A_s, self.n_s, self.amp, self.freq, self.width))
         elif self.powerspec == 'logosci':
             pars.set_initial_power_function(PK_log, args=(self.A_s, self.n_s, self.amp, self.freq))
+        elif self.powerspec == 'cutoff':
+            pars.set_initial_power_function(PK_exp, args=(self.A_s, self.n_s, self.k_cutoff, self.alpha_cutoff))
         else:
             pars.set_initial_power_function(PK_pow, args=(self.A_s, self.n_s))
 
