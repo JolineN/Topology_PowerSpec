@@ -15,6 +15,8 @@ import numpy as np
 import parameter_files.default_E1 as parameter_file
 param = parameter_file.parameter
 
+length=0.9
+
 #specify the initial power spectrum of the E_k topology (E18 uses the standard power law)
 #available power spec are: powlaw (default), local (amp, location, width), 
 #wavepacket (amp, freq, width), logosci (amp,freq)
@@ -29,6 +31,9 @@ powerparam={
   'k_cutoff': 0.001,
   'alpha_cutoff': 3.,
 }
+param['Lx'] = length
+param['Ly'] = length
+param['Lz'] = length
 
 if param['topology'] == 'E1':
   a = E1(param=param,powerparam=powerparam, make_run_folder=True)

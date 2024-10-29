@@ -21,7 +21,7 @@ kmin= [1e-4,2e-4,3e-4, 4e-4, 5e-4, 6e-4, 7e-4, 8e-4, 9e-4,1e-3, 1.5e-3, 2e-3]
 width=0.2e-4
 
 KLs=np.zeros((len(ampl), len(kmin),2))
-path_for_KL="./MoveE1_l20_08_width02.npy"
+path_for_KL="./MoveE1_l20_07_width02.npy"
 
 #specify the initial power spectrum of the E_k topology (E18 uses the standard power law)
 #available power spec are: powlaw (default), local (amp, location, width), 

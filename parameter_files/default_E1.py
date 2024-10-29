@@ -4,9 +4,9 @@ import numpy as np
 parameter = {
   # TOPOLOGY PARAMETERS
   'topology': 'E1',               # Self-explanatory
-  'Lx': 1.15,                     # In diameter of LSS
-  'Ly': 1.15,                     # In diameter of LSS
-  'Lz': 1.15,                     # In diameter of LSS
+  'Lx': 0.7,                     # In diameter of LSS
+  'Ly': 0.7,                     # In diameter of LSS
+  'Lz': 0.7,                     # In diameter of LSS
 
   'beta': 90,
   'alpha': 90,

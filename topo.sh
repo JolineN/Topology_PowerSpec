@@ -7,4 +7,4 @@
 #SBATCH -t 30:00:00         # Run time (hh:mm:ss) - 1.5 hour
 #SBATCH --exclusive
 
-python test_local.py
+python run_topology.py
